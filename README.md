@@ -8,8 +8,11 @@ Requer Node.js 24.
 
 ```bash
 npm install
+docker compose up -d
 npm run dev
 ```
+
+`docker compose up -d` sobe só o PostgreSQL e o MinIO deste repositório, para desenvolvimento. A API continua no host e recebe os dois por `DATABASE_URL` e `S3_*`. Staging e production não usam este compose: os mesmos nomes de variável vêm do ambiente de execução.
 
 A API escuta em `http://127.0.0.1:3000`.
 
@@ -64,6 +67,11 @@ A imagem `Dockerfile` escuta em `0.0.0.0:3000`, roda com usuário sem privilégi
 | `OPENAPI_ENABLED` | `true` fora de `production` | `true`, `false` |
 | `CORS_ORIGINS` | vazio | origens separadas por vírgula |
 | `DATABASE_URL` | vazio | obrigatório em `staging` e `production` |
+| `S3_BUCKET` | vazio | nome do bucket; sem ele, fotos e certificados ficam indisponíveis |
+| `S3_REGION` | `sa-east-1` | região do bucket |
+| `S3_ENDPOINT` | vazio | URL http(s) do S3 local; vazio usa o endpoint da nuvem |
+| `S3_ACCESS_KEY_ID` | vazio | junto com endpoint e segredo; vazio usa a credencial do ambiente |
+| `S3_SECRET_ACCESS_KEY` | vazio | junto com endpoint e access key |
 
 O processo aplica as migrations SQL de `migrations/` ao iniciar. `npm run migrate` faz o mesmo passo sem subir o HTTP. Consultas clínicas entram com `SET LOCAL ROLE implante_app` e `app.dentist_id`, sob row level security. O papel da aplicação não contorna essa política. `/ready` consulta o banco quando `DATABASE_URL` existe.
 

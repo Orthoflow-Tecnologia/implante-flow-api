@@ -21,13 +21,28 @@ export type AppConfig = {
     audience: string
     jwksUrl: string
   } | null
-  s3: { bucket: string; region: string } | null
+  s3: {
+    bucket: string
+    region: string
+    endpoint?: string
+    accessKeyId?: string
+    secretAccessKey?: string
+  } | null
 }
 
 export class ConfigError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'ConfigError'
+  }
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
   }
 }
 
@@ -106,7 +121,28 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       ? { issuer: workOsIssuer, audience: workOsAudience, jwksUrl: workOsJwksUrl }
       : null
   const s3Bucket = read(source, 'S3_BUCKET')
-  const s3 = s3Bucket ? { bucket: s3Bucket, region: read(source, 'S3_REGION') ?? 'sa-east-1' } : null
+  const s3Endpoint = read(source, 'S3_ENDPOINT')
+  const s3AccessKeyId = read(source, 'S3_ACCESS_KEY_ID')
+  const s3SecretAccessKey = read(source, 'S3_SECRET_ACCESS_KEY')
+  const localS3Count = [s3Endpoint, s3AccessKeyId, s3SecretAccessKey].filter((value) => value !== undefined).length
+  if (localS3Count !== 0 && localS3Count !== 3) {
+    throw new ConfigError('S3_ENDPOINT, S3_ACCESS_KEY_ID e S3_SECRET_ACCESS_KEY devem ser definidos juntos.')
+  }
+  if (localS3Count === 3 && s3Bucket === undefined) {
+    throw new ConfigError('S3_BUCKET é obrigatório quando o endpoint local está definido.')
+  }
+  if (s3Endpoint !== undefined && !isHttpUrl(s3Endpoint)) {
+    throw new ConfigError('S3_ENDPOINT inválido. Use uma URL http ou https.')
+  }
+  const s3 = s3Bucket
+    ? {
+        bucket: s3Bucket,
+        region: read(source, 'S3_REGION') ?? 'sa-east-1',
+        ...(s3Endpoint && s3AccessKeyId && s3SecretAccessKey
+          ? { endpoint: s3Endpoint, accessKeyId: s3AccessKeyId, secretAccessKey: s3SecretAccessKey }
+          : {}),
+      }
+    : null
 
   return {
     appEnv: appEnvRaw,

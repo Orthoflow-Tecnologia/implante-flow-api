@@ -11,8 +11,26 @@ export type ObjectStore = {
   put(input: { key: string; body: Uint8Array; contentType: string }): Promise<void>
 }
 
-export function createS3ObjectStore(options: { bucket: string; region: string }): ObjectStore {
-  const client = new S3Client({ region: options.region })
+export function createS3ObjectStore(options: {
+  bucket: string
+  region: string
+  endpoint?: string
+  accessKeyId?: string
+  secretAccessKey?: string
+}): ObjectStore {
+  const client = new S3Client({
+    region: options.region,
+    ...(options.endpoint && options.accessKeyId && options.secretAccessKey
+      ? {
+          endpoint: options.endpoint,
+          forcePathStyle: true,
+          credentials: {
+            accessKeyId: options.accessKeyId,
+            secretAccessKey: options.secretAccessKey,
+          },
+        }
+      : {}),
+  })
   return {
     async presignPut(input) {
       return getSignedUrl(
