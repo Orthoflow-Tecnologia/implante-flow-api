@@ -99,7 +99,7 @@ test('rota inexistente usa o envelope de erro', async () => {
   const app = await buildApp(auth)
   const response = await app.inject({
     method: 'GET',
-    url: '/v1/pacientes',
+    url: '/v1/nao-existe',
     headers: { authorization: 'Bearer ana' },
   })
   assert.equal(response.statusCode, 404)

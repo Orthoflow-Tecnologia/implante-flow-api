@@ -26,6 +26,7 @@ const app = await buildApp({
   config,
   readinessCheck: async () => (database ? database.ping() : true),
   ...(authenticate ? { authenticate } : {}),
+  ...(database ? { database } : {}),
 })
 
 let shuttingDown = false

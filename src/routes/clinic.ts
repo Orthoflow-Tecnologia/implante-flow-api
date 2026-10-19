@@ -1,0 +1,223 @@
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import type { Database } from '../db/database.js'
+import {
+  createPatient,
+  createProcedure,
+  getPatient,
+  getProcedure,
+  listPatients,
+  recordVisit,
+  updateFollowUp,
+  updatePatient,
+  updateProcedureStatus,
+  type PatientInput,
+  type ProcedureInput,
+} from '../clinic/store.js'
+import { errorResponseSchema } from '../http/error-handler.js'
+
+const denied = (request: FastifyRequest) => ({
+  error: { code: 'forbidden', message: 'Acesso negado.', requestId: request.id },
+})
+
+function databaseOf(request: FastifyRequest, reply: FastifyReply): Database | undefined {
+  if (request.server.database && request.dentist) return request.server.database
+  void reply.status(503).send({
+    error: { code: 'unavailable', message: 'Prontuário indisponível.', requestId: request.id },
+  })
+  return undefined
+}
+
+function page(query: { limit?: number; offset?: number }): { limit: number; offset: number } {
+  return {
+    limit: query.limit ?? 50,
+    offset: query.offset ?? 0,
+  }
+}
+
+export async function registerClinicRoutes(app: FastifyInstance): Promise<void> {
+  await app.register(
+    async (v1) => {
+      v1.get(
+        '/patients',
+        {
+          schema: {
+            tags: ['prontuario'],
+            operationId: 'listPatients',
+            security: [{ bearerAuth: [] }],
+            querystring: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                q: { type: 'string', maxLength: 120 },
+                limit: { type: 'integer', minimum: 1, maximum: 100 },
+                offset: { type: 'integer', minimum: 0 },
+              },
+            },
+            response: { 401: errorResponseSchema, 403: errorResponseSchema },
+          },
+        },
+        async (request, reply) => {
+          const database = databaseOf(request, reply)
+          if (!database || !request.dentist) return
+          const query = request.query as { q?: string; limit?: number; offset?: number }
+          const { limit, offset } = page(query)
+          return listPatients(database, request.dentist.id, query.q?.trim() ?? '', limit, offset)
+        },
+      )
+
+      v1.post(
+        '/patients',
+        {
+          schema: {
+            tags: ['prontuario'],
+            operationId: 'createPatient',
+            security: [{ bearerAuth: [] }],
+            body: { type: 'object', additionalProperties: false, properties: patientProperties },
+            response: {
+              201: { type: 'object', additionalProperties: true },
+              400: errorResponseSchema,
+              401: errorResponseSchema,
+            },
+          },
+        },
+        async (request, reply) => {
+          const database = databaseOf(request, reply)
+          if (!database || !request.dentist) return
+          const patient = await createPatient(database, request.dentist.id, request.body as PatientInput)
+          return reply.status(201).send(patient)
+        },
+      )
+
+      v1.get('/patients/:patientId', resourceSchema('getPatient'), async (request, reply) => {
+        const database = databaseOf(request, reply)
+        if (!database || !request.dentist) return
+        const patient = await getPatient(database, request.dentist.id, (request.params as { patientId: string }).patientId)
+        if (!patient) return reply.status(403).send(denied(request))
+        return patient
+      })
+
+      v1.patch('/patients/:patientId', resourceSchema('updatePatient'), async (request, reply) => {
+        const database = databaseOf(request, reply)
+        if (!database || !request.dentist) return
+        const patient = await updatePatient(
+          database,
+          request.dentist.id,
+          (request.params as { patientId: string }).patientId,
+          request.body as PatientInput,
+        )
+        if (!patient) return reply.status(403).send(denied(request))
+        return patient
+      })
+
+      v1.post('/patients/:patientId/procedures', resourceSchema('createProcedure'), async (request, reply) => {
+        const database = databaseOf(request, reply)
+        if (!database || !request.dentist) return
+        const procedure = await createProcedure(
+          database,
+          request.dentist.id,
+          (request.params as { patientId: string }).patientId,
+          request.body as ProcedureInput,
+        )
+        if (!procedure) return reply.status(403).send(denied(request))
+        return reply.status(201).send(procedure)
+      })
+
+      v1.get('/procedures/:procedureId', resourceSchema('getProcedure'), async (request, reply) => {
+        const database = databaseOf(request, reply)
+        if (!database || !request.dentist) return
+        const procedure = await getProcedure(
+          database,
+          request.dentist.id,
+          (request.params as { procedureId: string }).procedureId,
+        )
+        if (!procedure) return reply.status(403).send(denied(request))
+        return procedure
+      })
+
+      v1.patch('/procedures/:procedureId', resourceSchema('updateProcedure'), async (request, reply) => {
+        const database = databaseOf(request, reply)
+        if (!database || !request.dentist) return
+        const body = request.body as { statusLabel?: unknown; notes?: unknown }
+        if (typeof body.statusLabel !== 'string') {
+          return reply.status(400).send({
+            error: { code: 'validation_error', message: 'Informe o status.', requestId: request.id },
+          })
+        }
+        const procedure = await updateProcedureStatus(
+          database,
+          request.dentist.id,
+          (request.params as { procedureId: string }).procedureId,
+          body.statusLabel,
+          typeof body.notes === 'string' ? body.notes : undefined,
+        )
+        if (!procedure) return reply.status(403).send(denied(request))
+        return procedure
+      })
+
+      v1.post('/procedures/:procedureId/visits', resourceSchema('recordVisit'), async (request, reply) => {
+        const database = databaseOf(request, reply)
+        if (!database || !request.dentist) return
+        const procedure = await recordVisit(
+          database,
+          request.dentist.id,
+          (request.params as { procedureId: string }).procedureId,
+          request.body as { date?: unknown; note?: unknown; statusLabel?: unknown },
+        )
+        if (!procedure) return reply.status(403).send(denied(request))
+        return reply.status(201).send(procedure)
+      })
+
+      v1.patch('/follow-ups/:followUpId', resourceSchema('updateFollowUp'), async (request, reply) => {
+        const database = databaseOf(request, reply)
+        if (!database || !request.dentist) return
+        const followUp = await updateFollowUp(
+          database,
+          request.dentist.id,
+          (request.params as { followUpId: string }).followUpId,
+          request.body as Record<string, unknown>,
+        )
+        if (!followUp) return reply.status(403).send(denied(request))
+        return followUp
+      })
+    },
+    { prefix: '/v1' },
+  )
+}
+
+const patientProperties = {
+  name: { type: 'string' },
+  birthDate: { type: 'string' },
+  phone: { type: 'string' },
+  email: { type: 'string' },
+  cpf: { type: 'string' },
+  notes: { type: 'string' },
+  guardian: { type: 'string' },
+  notifyByEmail: { type: 'boolean' },
+  notifyByPhone: { type: 'boolean' },
+}
+
+function resourceSchema(operationId: string) {
+  return {
+    schema: {
+      tags: ['prontuario'],
+      operationId,
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          patientId: { type: 'string', format: 'uuid' },
+          procedureId: { type: 'string', format: 'uuid' },
+          followUpId: { type: 'string', format: 'uuid' },
+        },
+      },
+      response: {
+        200: { type: 'object', additionalProperties: true },
+        201: { type: 'object', additionalProperties: true },
+        400: errorResponseSchema,
+        401: errorResponseSchema,
+        403: errorResponseSchema,
+      },
+    },
+  }
+}
