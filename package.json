@@ -1,0 +1,40 @@
+{
+  "name": "implante-flow-api",
+  "version": "0.1.0",
+  "description": "API clínica do Implante Flow",
+  "scripts": {
+    "test": "tsx --test test/*.test.ts",
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Orthoflow-Tecnologia/implante-flow-api.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/Orthoflow-Tecnologia/implante-flow-api/issues"
+  },
+  "homepage": "https://github.com/Orthoflow-Tecnologia/implante-flow-api#readme",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.3.1",
+    "@fastify/helmet": "^13.2.0",
+    "@fastify/swagger": "^9.9.2",
+    "@fastify/swagger-ui": "^6.1.2",
+    "fastify": "^5.12.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
