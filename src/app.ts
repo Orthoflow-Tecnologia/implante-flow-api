@@ -15,6 +15,7 @@ import { registerCertificateRoutes } from './routes/certificates.js'
 import { registerCatalogRoutes } from './routes/catalog.js'
 import { registerClinicRoutes } from './routes/clinic.js'
 import { registerPhotoRoutes } from './routes/photos.js'
+import { registerReportRoutes } from './routes/reports.js'
 import { registerPracticeRoutes } from './routes/practice.js'
 import { registerHealthRoutes, type ReadinessCheck } from './routes/health.js'
 import { registerV1Routes } from './routes/v1.js'
@@ -27,6 +28,7 @@ export type BuildAppOptions = {
   database?: Database | null
   objectStore?: ObjectStore | null
   documentSigner?: DocumentSigner
+  clock?: () => Date
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -54,6 +56,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.decorate('config', config)
   app.decorate('database', options.database ?? null)
   app.decorate('objectStore', options.objectStore ?? null)
+  app.decorate('clock', options.clock ?? (() => new Date()))
 
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id)
@@ -111,6 +114,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await registerPracticeRoutes(app)
   await registerPhotoRoutes(app)
   await registerCertificateRoutes(app, options.documentSigner)
+  await registerReportRoutes(app)
 
   return app
 }

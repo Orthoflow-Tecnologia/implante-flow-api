@@ -8,6 +8,7 @@ declare module 'fastify' {
     config: AppConfig
     database: Database | null
     objectStore: ObjectStore | null
+    clock: () => Date
   }
 
   interface FastifyRequest {
