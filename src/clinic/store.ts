@@ -143,19 +143,34 @@ export async function createPatient(
 export async function listPatients(
   database: Database,
   dentistId: string,
-  search: string,
-  limit: number,
-  offset: number,
+  options: {
+    search: string
+    limit: number
+    offset: number
+    locationId?: string
+    withoutLocation?: boolean
+  },
 ): Promise<PatientRecord[]> {
-  const term = search.replace(/[\\%_]/g, '\\$&')
+  const term = options.search.replace(/[\\%_]/g, '\\$&')
   const rows = await database.withDentist(dentistId, (tx) =>
     tx.query<PatientRow>(
       `SELECT ${patientColumns}
        FROM patients
        WHERE ($1 = '' OR name ILIKE $2 ESCAPE '\\')
+         AND (
+           $5::uuid IS NULL AND NOT $6::boolean
+           OR ($6::boolean AND NOT EXISTS (
+             SELECT 1 FROM patient_locations WHERE patient_locations.patient_id = patients.id
+           ))
+           OR EXISTS (
+             SELECT 1 FROM patient_locations
+             WHERE patient_locations.patient_id = patients.id
+               AND patient_locations.location_id = $5::uuid
+           )
+         )
        ORDER BY lower(name), id
        LIMIT $3 OFFSET $4`,
-      [search, `%${term}%`, limit, offset],
+      [options.search, `%${term}%`, options.limit, options.offset, options.locationId ?? null, options.withoutLocation === true],
     ),
   )
   return rows.map(toPatient)

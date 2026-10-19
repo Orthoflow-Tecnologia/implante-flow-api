@@ -11,6 +11,7 @@ import { registerErrorHandler } from './http/error-handler.js'
 import { requestIdFrom } from './http/request-id.js'
 import { registerCatalogRoutes } from './routes/catalog.js'
 import { registerClinicRoutes } from './routes/clinic.js'
+import { registerPracticeRoutes } from './routes/practice.js'
 import { registerHealthRoutes, type ReadinessCheck } from './routes/health.js'
 import { registerV1Routes } from './routes/v1.js'
 import './types.js'
@@ -100,6 +101,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await registerV1Routes(app)
   await registerClinicRoutes(app)
   await registerCatalogRoutes(app)
+  await registerPracticeRoutes(app)
 
   return app
 }

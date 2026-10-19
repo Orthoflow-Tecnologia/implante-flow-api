@@ -51,17 +51,36 @@ export async function registerClinicRoutes(app: FastifyInstance): Promise<void> 
                 q: { type: 'string', maxLength: 120 },
                 limit: { type: 'integer', minimum: 1, maximum: 100 },
                 offset: { type: 'integer', minimum: 0 },
+                locationId: { type: 'string', format: 'uuid' },
+                withoutLocation: { type: 'boolean' },
               },
             },
-            response: { 401: errorResponseSchema, 403: errorResponseSchema },
+            response: { 400: errorResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema },
           },
         },
         async (request, reply) => {
           const database = databaseOf(request, reply)
           if (!database || !request.dentist) return
-          const query = request.query as { q?: string; limit?: number; offset?: number }
+          const query = request.query as {
+            q?: string
+            limit?: number
+            offset?: number
+            locationId?: string
+            withoutLocation?: boolean
+          }
+          if (query.locationId && query.withoutLocation) {
+            return reply.status(400).send({
+              error: { code: 'validation_error', message: 'Escolha um local ou pacientes sem local.', requestId: request.id },
+            })
+          }
           const { limit, offset } = page(query)
-          return listPatients(database, request.dentist.id, query.q?.trim() ?? '', limit, offset)
+          return listPatients(database, request.dentist.id, {
+            search: query.q?.trim() ?? '',
+            limit,
+            offset,
+            ...(query.locationId ? { locationId: query.locationId } : {}),
+            ...(query.withoutLocation ? { withoutLocation: true } : {}),
+          })
         },
       )
 

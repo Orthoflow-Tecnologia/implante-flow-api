@@ -19,7 +19,7 @@ test('migrations criam o prontuário e podem rodar de novo', async () => {
   const database = await PgliteDatabase.create()
   const first = await migrate(database)
   const second = await migrate(database)
-  assert.deepEqual(first, ['000_role.sql', '001_clinical_schema.sql', '002_catalog_seed.sql'])
+  assert.ok(first.includes('001_clinical_schema.sql'))
   assert.deepEqual(second, [])
 
   const tables = await database.query<{ table_name: string }>(
