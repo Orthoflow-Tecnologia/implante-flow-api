@@ -33,7 +33,7 @@ Este contrato é o que a infraestrutura ([F3S-466](https://linear.app/felpszip/i
 
 Os dois probes são públicos, não versionados e não consultam dado clínico. Não exigem `Authorization`. O orquestrador deve usar `/health` para reiniciar o processo e `/ready` para tirar a instância do balanceador.
 
-`GET /v1` identifica o serviço. Rotas de negócio entram em `/v1` e, quando existirem, exigem o access token do WorkOS. Mudança incompatível de contrato abre `/v2`; os probes permanecem no mesmo caminho.
+`GET /v1` identifica o serviço. Rotas em `/v1` exigem `Authorization: Bearer` com access token do WorkOS (issuer, audience, expiração e JWKS). O `sub` vira o dentista dono. Probes e `/docs` continuam públicos. Mudança incompatível de contrato abre `/v2`.
 
 Cabeçalho `x-request-id` é devolvido em toda resposta. Se o valor recebido tiver entre 1 e 128 caracteres seguros (`A-Z`, `a-z`, `0-9`, `.`, `_`, `:`, `-`), ele é preservado. Caso contrário, a API gera um UUID.
 

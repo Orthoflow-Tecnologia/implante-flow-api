@@ -1,14 +1,31 @@
+import { createRemoteJWKSet } from 'jose'
+import { bearerToken, createAccessTokenVerifier } from './auth/access-token.js'
+import { dentistForAccessToken } from './auth/dentist.js'
+import type { Authenticate } from './auth/plugin.js'
 import { buildApp } from './app.js'
-import { loadConfig } from './config.js'
+import { ConfigError, loadConfig } from './config.js'
 import { migrate } from './db/migrate.js'
 import { PgDatabase } from './db/pg-database.js'
 
 const config = loadConfig()
 const database = config.databaseUrl ? new PgDatabase(config.databaseUrl) : undefined
 if (database) await migrate(database)
+
+let authenticate: Authenticate | undefined
+if (config.workOs) {
+  if (!database) throw new ConfigError('WorkOS exige DATABASE_URL.')
+  const verify = createAccessTokenVerifier({
+    issuer: config.workOs.issuer,
+    audience: config.workOs.audience,
+    keys: createRemoteJWKSet(new URL(config.workOs.jwksUrl)),
+  })
+  authenticate = async (authorization) => dentistForAccessToken(database, await verify(bearerToken(authorization)))
+}
+
 const app = await buildApp({
   config,
   readinessCheck: async () => (database ? database.ping() : true),
+  ...(authenticate ? { authenticate } : {}),
 })
 
 let shuttingDown = false

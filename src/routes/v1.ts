@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { forbidUnlessSelf } from '../auth/plugin.js'
 import { errorResponseSchema } from '../http/error-handler.js'
 
 const serviceSchema = {
@@ -28,9 +29,11 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
               additionalProperties: false,
               properties: {},
             },
+            security: [{ bearerAuth: [] }],
             response: {
               200: serviceSchema,
               400: errorResponseSchema,
+              401: errorResponseSchema,
             },
           },
         },
@@ -40,6 +43,61 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
           apiVersion: 'v1' as const,
           environment: v1.config.appEnv,
         }),
+      )
+
+      v1.get(
+        '/session',
+        {
+          schema: {
+            tags: ['operacao'],
+            operationId: 'getSession',
+            summary: 'Dentista dono do access token',
+            security: [{ bearerAuth: [] }],
+            response: {
+              200: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['dentistId'],
+                properties: { dentistId: { type: 'string', format: 'uuid' } },
+              },
+              401: errorResponseSchema,
+            },
+          },
+        },
+        async (request) => ({ dentistId: request.dentist?.id }),
+      )
+
+      v1.get(
+        '/dentists/:dentistId',
+        {
+          schema: {
+            tags: ['operacao'],
+            operationId: 'getDentist',
+            summary: 'Confere se o token é do dentista informado',
+            security: [{ bearerAuth: [] }],
+            params: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['dentistId'],
+              properties: { dentistId: { type: 'string', format: 'uuid' } },
+            },
+            response: {
+              200: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['dentistId'],
+                properties: { dentistId: { type: 'string', format: 'uuid' } },
+              },
+              401: errorResponseSchema,
+              403: errorResponseSchema,
+            },
+          },
+        },
+        async (request, reply) => {
+          const { dentistId } = request.params as { dentistId: string }
+          if (!forbidUnlessSelf(request, reply, dentistId)) return
+          return { dentistId }
+        },
       )
     },
     { prefix: '/v1' },

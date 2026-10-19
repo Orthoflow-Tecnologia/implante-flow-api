@@ -3,6 +3,8 @@ import helmet from '@fastify/helmet'
 import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
 import Fastify, { LogController, type FastifyInstance } from 'fastify'
+import type { Authenticate } from './auth/plugin.js'
+import { registerAuth } from './auth/plugin.js'
 import { type AppConfig, loadConfig } from './config.js'
 import { registerErrorHandler } from './http/error-handler.js'
 import { requestIdFrom } from './http/request-id.js'
@@ -13,6 +15,7 @@ import './types.js'
 export type BuildAppOptions = {
   config?: AppConfig
   readinessCheck?: ReadinessCheck
+  authenticate?: Authenticate
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -70,6 +73,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         },
         servers: [{ url: '/' }],
         tags: [{ name: 'operacao', description: 'Contrato de execução e identidade da API.' }],
+        components: {
+          securitySchemes: {
+            bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+          },
+        },
       },
     })
     await app.register(swaggerUi, {
@@ -79,6 +87,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }
 
   registerHealthRoutes(app, readinessCheck)
+  registerAuth(app, options.authenticate)
   await registerV1Routes(app)
 
   return app

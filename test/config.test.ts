@@ -19,11 +19,22 @@ test('carrega defaults seguros fora de produção', () => {
   assert.deepEqual(config.corsOrigins, [])
   assert.equal(config.serviceName, 'implante-flow-api')
   assert.equal(config.databaseUrl, null)
+  assert.equal(config.workOs, null)
   assert.match(config.serviceVersion, /^\d+\.\d+\.\d+/)
 })
 
+const productionAuth = {
+  WORKOS_ISSUER: 'https://auth.example',
+  WORKOS_AUDIENCE: 'client_123',
+  WORKOS_JWKS_URL: 'https://auth.example/jwks',
+}
+
 test('desliga o OpenAPI em production quando a flag não vem', () => {
-  const config = loadConfig({ APP_ENV: 'production', DATABASE_URL: 'postgres://db/implante' })
+  const config = loadConfig({
+    APP_ENV: 'production',
+    DATABASE_URL: 'postgres://db/implante',
+    ...productionAuth,
+  })
   assert.equal(config.openApiEnabled, false)
   assert.equal(config.logLevel, 'info')
   assert.equal(config.databaseUrl, 'postgres://db/implante')
@@ -35,6 +46,7 @@ test('aceita OpenAPI ligado em production por flag explícita', () => {
     APP_ENV: 'production',
     OPENAPI_ENABLED: 'true',
     DATABASE_URL: 'postgres://db/implante',
+    ...productionAuth,
   })
   assert.equal(config.openApiEnabled, true)
 })

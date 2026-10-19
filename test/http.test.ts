@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { InvalidAccessTokenError } from '../src/auth/access-token.js'
+import type { Authenticate } from '../src/auth/plugin.js'
 import type { AppConfig } from '../src/config.js'
 import { buildApp } from '../src/app.js'
 
@@ -13,7 +15,15 @@ const config: AppConfig = {
   serviceName: 'implante-flow-api',
   serviceVersion: '0.1.0',
   databaseUrl: null,
+  workOs: null,
 }
+
+const anaId = '11111111-1111-4111-8111-111111111111'
+const authenticate: Authenticate = async (authorization) => {
+  if (authorization !== 'Bearer ana') throw new InvalidAccessTokenError()
+  return { id: anaId, workOsUserId: 'user_ana' }
+}
+const auth = { config, authenticate }
 
 test('probes públicos respondem sem autenticação', async () => {
   const app = await buildApp({ config })
@@ -62,9 +72,13 @@ test('preserva x-request-id seguro e substitui valor inválido', async () => {
 })
 
 test('GET /v1 identifica a API e rejeita query desconhecida', async () => {
-  const app = await buildApp({ config })
-  const ok = await app.inject({ method: 'GET', url: '/v1' })
-  const invalid = await app.inject({ method: 'GET', url: '/v1?paciente=ana' })
+  const app = await buildApp(auth)
+  const ok = await app.inject({ method: 'GET', url: '/v1', headers: { authorization: 'Bearer ana' } })
+  const invalid = await app.inject({
+    method: 'GET',
+    url: '/v1?paciente=ana',
+    headers: { authorization: 'Bearer ana' },
+  })
 
   assert.equal(ok.statusCode, 200)
   assert.deepEqual(ok.json(), {
@@ -82,8 +96,12 @@ test('GET /v1 identifica a API e rejeita query desconhecida', async () => {
 })
 
 test('rota inexistente usa o envelope de erro', async () => {
-  const app = await buildApp({ config })
-  const response = await app.inject({ method: 'GET', url: '/v1/pacientes' })
+  const app = await buildApp(auth)
+  const response = await app.inject({
+    method: 'GET',
+    url: '/v1/pacientes',
+    headers: { authorization: 'Bearer ana' },
+  })
   assert.equal(response.statusCode, 404)
   const body = response.json<{ error: { code: string; requestId: string } }>()
   assert.equal(body.error.code, 'not_found')

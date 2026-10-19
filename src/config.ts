@@ -16,6 +16,11 @@ export type AppConfig = {
   serviceName: 'implante-flow-api'
   serviceVersion: string
   databaseUrl: string | null
+  workOs: {
+    issuer: string
+    audience: string
+    jwksUrl: string
+  } | null
 }
 
 export class ConfigError extends Error {
@@ -84,6 +89,22 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new ConfigError('DATABASE_URL é obrigatório em staging e production.')
   }
 
+  const workOsIssuer = read(source, 'WORKOS_ISSUER')
+  const workOsAudience = read(source, 'WORKOS_AUDIENCE')
+  const workOsJwksUrl = read(source, 'WORKOS_JWKS_URL')
+  const workOsValues = [workOsIssuer, workOsAudience, workOsJwksUrl]
+  const workOsCount = workOsValues.filter((value) => value !== undefined).length
+  if (workOsCount !== 0 && workOsCount !== 3) {
+    throw new ConfigError('WORKOS_ISSUER, WORKOS_AUDIENCE e WORKOS_JWKS_URL devem ser definidos juntos.')
+  }
+  if ((appEnvRaw === 'production' || appEnvRaw === 'staging') && workOsCount !== 3) {
+    throw new ConfigError('WorkOS é obrigatório em staging e production.')
+  }
+  const workOs =
+    workOsIssuer && workOsAudience && workOsJwksUrl
+      ? { issuer: workOsIssuer, audience: workOsAudience, jwksUrl: workOsJwksUrl }
+      : null
+
   return {
     appEnv: appEnvRaw,
     host: read(source, 'HOST') ?? '0.0.0.0',
@@ -97,5 +118,6 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     serviceName: 'implante-flow-api',
     serviceVersion: readServiceVersion(),
     databaseUrl,
+    workOs,
   }
 }
