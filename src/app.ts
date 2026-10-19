@@ -7,9 +7,11 @@ import type { Authenticate } from './auth/plugin.js'
 import { registerAuth } from './auth/plugin.js'
 import { type AppConfig, loadConfig } from './config.js'
 import type { Database } from './db/database.js'
+import type { DocumentSigner } from './certificates/issue.js'
 import type { ObjectStore } from './files/object-store.js'
 import { registerErrorHandler } from './http/error-handler.js'
 import { requestIdFrom } from './http/request-id.js'
+import { registerCertificateRoutes } from './routes/certificates.js'
 import { registerCatalogRoutes } from './routes/catalog.js'
 import { registerClinicRoutes } from './routes/clinic.js'
 import { registerPhotoRoutes } from './routes/photos.js'
@@ -24,6 +26,7 @@ export type BuildAppOptions = {
   authenticate?: Authenticate
   database?: Database | null
   objectStore?: ObjectStore | null
+  documentSigner?: DocumentSigner
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -107,6 +110,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await registerCatalogRoutes(app)
   await registerPracticeRoutes(app)
   await registerPhotoRoutes(app)
+  await registerCertificateRoutes(app, options.documentSigner)
 
   return app
 }
