@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Database } from '../db/database.js'
+import { readChart } from '../clinic/chart.js'
+import type { ToothSiteInput } from '../clinic/rules.js'
 import {
   createPatient,
   createProcedure,
@@ -37,6 +39,28 @@ function page(query: { limit?: number; offset?: number }): { limit: number; offs
 export async function registerClinicRoutes(app: FastifyInstance): Promise<void> {
   await app.register(
     async (v1) => {
+      v1.get(
+        '/chart',
+        {
+          schema: {
+            tags: ['prontuario'],
+            operationId: 'getChart',
+            summary: 'Prontuário do dentista autenticado',
+            security: [{ bearerAuth: [] }],
+            response: {
+              200: { type: 'object', additionalProperties: true },
+              401: errorResponseSchema,
+              503: errorResponseSchema,
+            },
+          },
+        },
+        async (request, reply) => {
+          const database = databaseOf(request, reply)
+          if (!database || !request.dentist) return
+          return readChart(database, request.dentist.id)
+        },
+      )
+
       v1.get(
         '/patients',
         {
@@ -156,7 +180,15 @@ export async function registerClinicRoutes(app: FastifyInstance): Promise<void> 
       v1.patch('/procedures/:procedureId', resourceSchema('updateProcedure'), async (request, reply) => {
         const database = databaseOf(request, reply)
         if (!database || !request.dentist) return
-        const body = request.body as { statusLabel?: unknown; notes?: unknown }
+        const body = request.body as {
+          statusLabel?: unknown
+          notes?: unknown
+          sites?: unknown
+          sinusLift?: unknown
+          sinusLiftTechnique?: unknown
+          sinusLiftNote?: unknown
+          associatedGraft?: unknown
+        }
         if (typeof body.statusLabel !== 'string') {
           return reply.status(400).send({
             error: { code: 'validation_error', message: 'Informe o status.', requestId: request.id },
@@ -168,6 +200,13 @@ export async function registerClinicRoutes(app: FastifyInstance): Promise<void> 
           (request.params as { procedureId: string }).procedureId,
           body.statusLabel,
           typeof body.notes === 'string' ? body.notes : undefined,
+          {
+            ...(Array.isArray(body.sites) ? { sites: body.sites as ToothSiteInput[] } : {}),
+            ...(typeof body.sinusLift === 'boolean' ? { sinusLift: body.sinusLift } : {}),
+            ...(typeof body.sinusLiftTechnique === 'string' ? { sinusLiftTechnique: body.sinusLiftTechnique } : {}),
+            ...(typeof body.sinusLiftNote === 'string' ? { sinusLiftNote: body.sinusLiftNote } : {}),
+            ...(typeof body.associatedGraft === 'boolean' ? { associatedGraft: body.associatedGraft } : {}),
+          },
         )
         if (!procedure) return reply.status(403).send(denied(request))
         return procedure
@@ -204,6 +243,7 @@ export async function registerClinicRoutes(app: FastifyInstance): Promise<void> 
 }
 
 const patientProperties = {
+  id: { type: 'string', format: 'uuid' },
   name: { type: 'string' },
   birthDate: { type: 'string' },
   phone: { type: 'string' },

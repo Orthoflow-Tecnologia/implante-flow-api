@@ -4,6 +4,7 @@ import { recordStageChange, revokeDisabledChannels } from '../notices/stage-noti
 import {
   ClinicValidationError,
   assertProcedureShape,
+  clientUuid,
   followUpReasons,
   isIsoDate,
   isMinor,
@@ -116,13 +117,15 @@ export async function createPatient(
   input: PatientInput,
 ): Promise<PatientRecord> {
   const patient = parsePatient(input)
+  const id = clientUuid((input as { id?: unknown }).id)
   const rows = await database.withDentist(dentistId, (tx) =>
     tx.query<PatientRow>(
       `INSERT INTO patients (
-         dentist_id, name, birth_date, phone, email, cpf, notes, guardian, notify_by_email, notify_by_phone
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         id, dentist_id, name, birth_date, phone, email, cpf, notes, guardian, notify_by_email, notify_by_phone
+       ) VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING ${patientColumns}`,
       [
+        id,
         dentistId,
         patient.name,
         patient.birthDate,
@@ -247,6 +250,7 @@ type GraftInput = PieceInput & {
 }
 
 export type ProcedureInput = {
+  id?: unknown
   modality?: unknown
   subtype?: unknown
   arch?: unknown
@@ -257,6 +261,7 @@ export type ProcedureInput = {
   sinusLift?: unknown
   sinusLiftTechnique?: unknown
   sinusLiftNote?: unknown
+  linkedProcedureIds?: unknown
   sites?: unknown
   followUps?: unknown
 }
@@ -296,16 +301,18 @@ export async function createProcedure(
     throw new ClinicValidationError('Descreva o tipo de levantamento de seio.')
   }
 
+  const id = clientUuid(input.id)
   return database.withDentist(dentistId, async (tx) => {
     const patient = await tx.query('SELECT id FROM patients WHERE id = $1 FOR UPDATE', [patientId])
     if (!patient[0]) return null
     const procedureRows = await tx.query<{ id: string }>(
       `INSERT INTO procedures (
-         dentist_id, patient_id, modality, subtype, associated_graft, sinus_lift, sinus_lift_technique,
+         id, dentist_id, patient_id, modality, subtype, associated_graft, sinus_lift, sinus_lift_technique,
          sinus_lift_note, arch, surgery_date, status_label, notes
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       ) VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING id`,
       [
+        id,
         dentistId,
         patientId,
         modality,
@@ -326,8 +333,28 @@ export async function createProcedure(
     for (const followUp of Array.isArray(input.followUps) ? input.followUps : []) {
       await insertFollowUp(tx, dentistId, procedureId, followUp as Record<string, unknown>)
     }
+    await insertLinks(tx, dentistId, procedureId, input.linkedProcedureIds)
     return readProcedure(tx, procedureId)
   })
+}
+
+async function insertLinks(
+  tx: Queryable,
+  dentistId: string,
+  procedureId: string,
+  links: unknown,
+): Promise<void> {
+  if (!Array.isArray(links)) return
+  for (const link of links) {
+    const linkedId = clientUuid(link)
+    if (!linkedId) throw new ClinicValidationError('Procedimento vinculado inválido.')
+    const found = await tx.query('SELECT id FROM procedures WHERE id = $1', [linkedId])
+    if (!found[0]) throw new ClinicValidationError('Procedimento vinculado não encontrado.')
+    await tx.query(
+      `INSERT INTO procedure_links (dentist_id, procedure_id, linked_procedure_id) VALUES ($1, $2, $3)`,
+      [dentistId, procedureId, linkedId],
+    )
+  }
 }
 
 async function insertSite(
@@ -412,9 +439,9 @@ async function insertFollowUp(
   if (!Number.isInteger(days) || days < 1) throw new ClinicValidationError('Antecedência do lembrete inválida.')
   await tx.query(
     `INSERT INTO follow_ups (
-       dentist_id, procedure_id, scheduled_on, reason, status, reminder_enabled, reminder_days_before
-     ) VALUES ($1, $2, $3, $4, 'agendado', $5, $6)`,
-    [dentistId, procedureId, scheduledOn, reason, input['reminderEnabled'] !== false, days],
+       id, dentist_id, procedure_id, scheduled_on, reason, status, reminder_enabled, reminder_days_before
+     ) VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, 'agendado', $6, $7)`,
+    [clientUuid(input['id']), dentistId, procedureId, scheduledOn, reason, input['reminderEnabled'] !== false, days],
   )
 }
 
@@ -482,20 +509,56 @@ export async function updateProcedureStatus(
   procedureId: string,
   statusLabel: string,
   notes: string | undefined,
+  details?: {
+    sites?: ToothSiteInput[]
+    sinusLift?: boolean
+    sinusLiftTechnique?: string | null
+    sinusLiftNote?: string
+    associatedGraft?: boolean
+  },
 ): Promise<Record<string, unknown> | null> {
   return database.withDentist(dentistId, async (tx) => {
-    const current = await tx.query<{ modality: string; status_label: string }>(
-      'SELECT modality, status_label FROM procedures WHERE id = $1 FOR UPDATE',
-      [procedureId],
-    )
+    const current = await tx.query<{
+      modality: string
+      subtype: string | null
+      arch: string | null
+      status_label: string
+    }>('SELECT modality, subtype, arch, status_label FROM procedures WHERE id = $1 FOR UPDATE', [procedureId])
     const modality = current[0]?.modality
-    if (!modality || !current[0]) return null
+    const row = current[0]
+    if (!modality || !row) return null
     if (!statusesFor(modality).includes(statusLabel)) throw new ClinicValidationError('Status inválido para a modalidade.')
     await tx.query(
       `UPDATE procedures SET status_label = $2, notes = COALESCE($3, notes) WHERE id = $1`,
       [procedureId, statusLabel, notes ?? null],
     )
-    await recordStageChange(tx, dentistId, procedureId, current[0].status_label, statusLabel)
+    if (details?.associatedGraft !== undefined) {
+      await tx.query('UPDATE procedures SET associated_graft = $2 WHERE id = $1', [procedureId, details.associatedGraft])
+    }
+    if (details?.sinusLift !== undefined) {
+      const sinusLift = details.sinusLift
+      const technique = sinusLift ? details.sinusLiftTechnique || null : null
+      const note = sinusLift ? details.sinusLiftNote ?? '' : ''
+      if (sinusLift && !technique) throw new ClinicValidationError('Informe o tipo de levantamento de seio.')
+      if (technique === 'outro' && note.trim().length === 0) {
+        throw new ClinicValidationError('Descreva o tipo de levantamento de seio.')
+      }
+      await tx.query(
+        `UPDATE procedures SET sinus_lift = $2, sinus_lift_technique = $3, sinus_lift_note = $4 WHERE id = $1`,
+        [procedureId, sinusLift, technique, note],
+      )
+    }
+    if (details?.sites) {
+      assertProcedureShape({
+        modality,
+        subtype: row.subtype,
+        arch: row.arch,
+        sites: details.sites,
+      })
+      await tx.query('DELETE FROM tooth_sites WHERE procedure_id = $1', [procedureId])
+      for (const site of details.sites) await insertSite(tx, dentistId, procedureId, site)
+    }
+    await recordStageChange(tx, dentistId, procedureId, row.status_label, statusLabel)
     return readProcedure(tx, procedureId)
   })
 }
@@ -504,7 +567,7 @@ export async function recordVisit(
   database: Database,
   dentistId: string,
   procedureId: string,
-  input: { date?: unknown; note?: unknown; statusLabel?: unknown },
+  input: { id?: unknown; date?: unknown; note?: unknown; statusLabel?: unknown },
 ): Promise<Record<string, unknown> | null> {
   const visitedOn = text(input.date)
   const note = text(input.note)
@@ -521,9 +584,9 @@ export async function recordVisit(
       throw new ClinicValidationError('Status inválido para a modalidade.')
     }
     await tx.query(
-      `INSERT INTO visits (dentist_id, procedure_id, visited_on, note, status_label)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [dentistId, procedureId, visitedOn, note, statusLabel],
+      `INSERT INTO visits (id, dentist_id, procedure_id, visited_on, note, status_label)
+       VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6)`,
+      [clientUuid(input.id), dentistId, procedureId, visitedOn, note, statusLabel],
     )
     await tx.query('UPDATE procedures SET status_label = $2 WHERE id = $1', [procedureId, statusLabel])
     await recordStageChange(tx, dentistId, procedureId, current[0].status_label, statusLabel)

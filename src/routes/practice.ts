@@ -5,6 +5,7 @@ import {
   getProfile,
   inactivateLocation,
   listLocations,
+  reactivateLocation,
   replacePatientLocations,
   setDefaultLocation,
   updateLocation,
@@ -35,7 +36,7 @@ export async function registerPracticeRoutes(app: FastifyInstance): Promise<void
       return profile
     })
 
-    v1.patch('/profile', { schema: { tags: ['perfil'], security: [{ bearerAuth: [] }], body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string' }, phone: { type: 'string' } } }, response: { 200: { type: 'object', additionalProperties: true }, 400: errorResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema } } }, async (request, reply) => {
+    v1.patch('/profile', { schema: { tags: ['perfil'], security: [{ bearerAuth: [] }], body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string' }, phone: { type: 'string' }, cro: { type: 'string' }, reminderEnabled: { type: 'boolean' }, reminderDaysBefore: { type: 'integer', minimum: 1 }, emailChannel: { type: 'boolean' }, pushChannel: { type: 'boolean' } } }, response: { 200: { type: 'object', additionalProperties: true }, 400: errorResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema } } }, async (request, reply) => {
       const database = databaseOf(request, reply)
       if (!database || !request.dentist) return
       const profile = await updateProfile(database, request.dentist.id, request.body as { name?: unknown; phone?: unknown })
@@ -68,6 +69,14 @@ export async function registerPracticeRoutes(app: FastifyInstance): Promise<void
       const database = databaseOf(request, reply)
       if (!database || !request.dentist) return
       const location = await setDefaultLocation(database, request.dentist.id, (request.params as { locationId: string }).locationId)
+      if (!location) return reply.status(403).send(denied(request))
+      return location
+    })
+
+    v1.post('/locations/:locationId/reactivate', { schema: { tags: ['perfil'], security: [{ bearerAuth: [] }], response: { 400: errorResponseSchema, 403: errorResponseSchema } } }, async (request, reply) => {
+      const database = databaseOf(request, reply)
+      if (!database || !request.dentist) return
+      const location = await reactivateLocation(database, request.dentist.id, (request.params as { locationId: string }).locationId)
       if (!location) return reply.status(403).send(denied(request))
       return location
     })

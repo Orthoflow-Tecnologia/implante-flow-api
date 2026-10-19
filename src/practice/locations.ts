@@ -1,5 +1,5 @@
 import type { Database } from '../db/database.js'
-import { ClinicValidationError, isValidPhone, normalizePhone } from '../clinic/rules.js'
+import { ClinicValidationError, clientUuid, isValidPhone, normalizePhone } from '../clinic/rules.js'
 
 export type CareLocation = {
   id: string
@@ -27,15 +27,14 @@ function toLocation(row: LocationRow): CareLocation {
   }
 }
 
-export async function getProfile(database: Database, dentistId: string): Promise<Record<string, unknown> | null> {
-  const rows = await database.withDentist(dentistId, (tx) =>
-    tx.query<Record<string, unknown>>(
-      `SELECT id, name, email, phone, cro, cro_uf, workos_user_id FROM dentists WHERE id = $1`,
-      [dentistId],
-    ),
-  )
-  const row = rows[0]
-  if (!row) return null
+function splitCro(value: string): { cro: string; croUf: string } {
+  const trimmed = value.trim()
+  const match = /^(.+?)\/([A-Za-z]{2})$/.exec(trimmed)
+  if (!match?.[1] || !match[2]) return { cro: trimmed, croUf: '' }
+  return { cro: match[1].trim(), croUf: match[2].toUpperCase() }
+}
+
+function profileFrom(row: Record<string, unknown>): Record<string, unknown> {
   return {
     id: row['id'],
     name: row['name'],
@@ -43,38 +42,83 @@ export async function getProfile(database: Database, dentistId: string): Promise
     phone: row['phone'],
     cro: row['cro'],
     croUf: row['cro_uf'],
+    workOsUserId: row['workos_user_id'],
+    reminderEnabled: row['reminder_enabled'],
+    reminderDaysBefore: row['reminder_days_before'],
+    emailChannel: row['email_channel'],
+    pushChannel: row['push_channel'],
   }
+}
+
+const profileColumns = `id, name, email, phone, cro, cro_uf, reminder_enabled, reminder_days_before, email_channel, push_channel, workos_user_id`
+
+export async function getProfile(database: Database, dentistId: string): Promise<Record<string, unknown> | null> {
+  const rows = await database.withDentist(dentistId, (tx) =>
+    tx.query<Record<string, unknown>>(`SELECT ${profileColumns} FROM dentists WHERE id = $1`, [dentistId]),
+  )
+  const row = rows[0]
+  if (!row) return null
+  return profileFrom(row)
 }
 
 export async function updateProfile(
   database: Database,
   dentistId: string,
-  input: { name?: unknown; phone?: unknown },
+  input: {
+    name?: unknown
+    phone?: unknown
+    cro?: unknown
+    reminderEnabled?: unknown
+    reminderDaysBefore?: unknown
+    emailChannel?: unknown
+    pushChannel?: unknown
+  },
 ): Promise<Record<string, unknown> | null> {
   const name = typeof input.name === 'string' ? input.name.trim() : undefined
   const phone = typeof input.phone === 'string' ? normalizePhone(input.phone) : undefined
+  const cro = typeof input.cro === 'string' ? splitCro(input.cro) : undefined
+  const reminderEnabled = typeof input.reminderEnabled === 'boolean' ? input.reminderEnabled : undefined
+  const emailChannel = typeof input.emailChannel === 'boolean' ? input.emailChannel : undefined
+  const pushChannel = typeof input.pushChannel === 'boolean' ? input.pushChannel : undefined
+  const reminderDaysBefore =
+    input.reminderDaysBefore === undefined ? undefined : Number(input.reminderDaysBefore)
   if (name !== undefined && name.length === 0) throw new ClinicValidationError('Informe o nome.')
   if (phone !== undefined && phone !== '' && !isValidPhone(phone)) throw new ClinicValidationError('Telefone inválido.')
+  if (
+    reminderDaysBefore !== undefined &&
+    (!Number.isInteger(reminderDaysBefore) || reminderDaysBefore < 1)
+  ) {
+    throw new ClinicValidationError('Antecedência do lembrete inválida.')
+  }
   return database.withDentist(dentistId, async (tx) => {
     const rows = await tx.query<Record<string, unknown>>(
       `UPDATE dentists
        SET name = COALESCE($2, name),
-           phone = COALESCE($3, phone)
+           phone = COALESCE($3, phone),
+           cro = CASE WHEN $4::boolean THEN $5 ELSE cro END,
+           cro_uf = CASE WHEN $4::boolean THEN $6 ELSE cro_uf END,
+           reminder_enabled = COALESCE($7, reminder_enabled),
+           reminder_days_before = COALESCE($8, reminder_days_before),
+           email_channel = COALESCE($9, email_channel),
+           push_channel = COALESCE($10, push_channel)
        WHERE id = $1
-       RETURNING id, name, email, phone, cro, cro_uf, workos_user_id`,
-      [dentistId, name ?? null, phone ?? null],
+       RETURNING ${profileColumns}`,
+      [
+        dentistId,
+        name ?? null,
+        phone ?? null,
+        cro !== undefined,
+        cro?.cro ?? '',
+        cro?.croUf ?? '',
+        reminderEnabled ?? null,
+        reminderDaysBefore ?? null,
+        emailChannel ?? null,
+        pushChannel ?? null,
+      ],
     )
     const row = rows[0]
     if (!row) return null
-    return {
-      id: row['id'],
-      name: row['name'],
-      email: row['email'],
-      phone: row['phone'],
-      cro: row['cro'],
-      croUf: row['cro_uf'],
-      workOsUserId: row['workos_user_id'],
-    }
+    return profileFrom(row)
   })
 }
 
@@ -88,19 +132,20 @@ export async function listLocations(database: Database, dentistId: string): Prom
 export async function createLocation(
   database: Database,
   dentistId: string,
-  input: { name?: unknown; address?: unknown },
+  input: { id?: unknown; name?: unknown; address?: unknown },
 ): Promise<CareLocation> {
   const name = typeof input.name === 'string' ? input.name.trim() : ''
   const address = typeof input.address === 'string' ? input.address.trim() : ''
   if (name.length === 0) throw new ClinicValidationError('Informe o nome do local.')
+  const id = clientUuid(input.id)
   const rows = await database.withDentist(dentistId, async (tx) => {
     await tx.query('SELECT id FROM care_locations FOR UPDATE')
     const active = await tx.query('SELECT id FROM care_locations WHERE active')
     return tx.query<LocationRow>(
-      `INSERT INTO care_locations (dentist_id, name, address, active, is_default)
-       VALUES ($1, $2, $3, true, $4)
+      `INSERT INTO care_locations (id, dentist_id, name, address, active, is_default)
+       VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, true, $5)
        RETURNING id, name, address, active, is_default`,
-      [dentistId, name, address, active.length === 0],
+      [id, dentistId, name, address, active.length === 0],
     )
   })
   const row = rows[0]
@@ -176,6 +221,32 @@ export async function inactivateLocation(
       [locationId],
     )
     return updated[0] ? toLocation(updated[0]) : null
+  })
+}
+
+export async function reactivateLocation(
+  database: Database,
+  dentistId: string,
+  locationId: string,
+): Promise<CareLocation | null> {
+  return database.withDentist(dentistId, async (tx) => {
+    await tx.query('SELECT id FROM care_locations FOR UPDATE')
+    const current = await tx.query<LocationRow>(
+      'SELECT id, name, address, active, is_default FROM care_locations WHERE id = $1',
+      [locationId],
+    )
+    if (!current[0]) return null
+    const defaults = await tx.query('SELECT id FROM care_locations WHERE active AND is_default AND id <> $1', [
+      locationId,
+    ])
+    const rows = await tx.query<LocationRow>(
+      `UPDATE care_locations
+       SET active = true, is_default = $2
+       WHERE id = $1
+       RETURNING id, name, address, active, is_default`,
+      [locationId, defaults.length === 0],
+    )
+    return rows[0] ? toLocation(rows[0]) : null
   })
 }
 
