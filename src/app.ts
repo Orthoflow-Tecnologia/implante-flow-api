@@ -9,6 +9,7 @@ import { type AppConfig, loadConfig } from './config.js'
 import type { Database } from './db/database.js'
 import { registerErrorHandler } from './http/error-handler.js'
 import { requestIdFrom } from './http/request-id.js'
+import { registerCatalogRoutes } from './routes/catalog.js'
 import { registerClinicRoutes } from './routes/clinic.js'
 import { registerHealthRoutes, type ReadinessCheck } from './routes/health.js'
 import { registerV1Routes } from './routes/v1.js'
@@ -79,6 +80,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         tags: [
           { name: 'operacao', description: 'Contrato de execução e identidade da API.' },
           { name: 'prontuario', description: 'Pacientes, procedimentos, consultas e retornos.' },
+          { name: 'catalogo', description: 'Fabricantes e modelos somente leitura.' },
         ],
         components: {
           securitySchemes: {
@@ -97,6 +99,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   registerAuth(app, options.authenticate)
   await registerV1Routes(app)
   await registerClinicRoutes(app)
+  await registerCatalogRoutes(app)
 
   return app
 }
