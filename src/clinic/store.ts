@@ -1,5 +1,6 @@
 import type { Queryable } from '../db/database.js'
 import type { Database } from '../db/database.js'
+import { recordStageChange, revokeDisabledChannels } from '../notices/stage-notices.js'
 import {
   ClinicValidationError,
   assertProcedureShape,
@@ -220,7 +221,9 @@ export async function updatePatient(
         patient.notifyByPhone,
       ],
     )
-    return rows[0] ? toPatient(rows[0]) : null
+    const saved = rows[0] ? toPatient(rows[0]) : null
+    await revokeDisabledChannels(tx, patientId)
+    return saved
   })
 }
 
@@ -481,16 +484,18 @@ export async function updateProcedureStatus(
   notes: string | undefined,
 ): Promise<Record<string, unknown> | null> {
   return database.withDentist(dentistId, async (tx) => {
-    const current = await tx.query<{ modality: string }>('SELECT modality FROM procedures WHERE id = $1 FOR UPDATE', [
-      procedureId,
-    ])
+    const current = await tx.query<{ modality: string; status_label: string }>(
+      'SELECT modality, status_label FROM procedures WHERE id = $1 FOR UPDATE',
+      [procedureId],
+    )
     const modality = current[0]?.modality
-    if (!modality) return null
+    if (!modality || !current[0]) return null
     if (!statusesFor(modality).includes(statusLabel)) throw new ClinicValidationError('Status inválido para a modalidade.')
     await tx.query(
       `UPDATE procedures SET status_label = $2, notes = COALESCE($3, notes) WHERE id = $1`,
       [procedureId, statusLabel, notes ?? null],
     )
+    await recordStageChange(tx, dentistId, procedureId, current[0].status_label, statusLabel)
     return readProcedure(tx, procedureId)
   })
 }
@@ -507,9 +512,10 @@ export async function recordVisit(
   if (!isIsoDate(visitedOn)) throw new ClinicValidationError('Data da consulta inválida.')
   if (statusLabel.length === 0) throw new ClinicValidationError('Informe o status da consulta.')
   return database.withDentist(dentistId, async (tx) => {
-    const current = await tx.query<{ modality: string }>('SELECT modality FROM procedures WHERE id = $1 FOR UPDATE', [
-      procedureId,
-    ])
+    const current = await tx.query<{ modality: string; status_label: string }>(
+      'SELECT modality, status_label FROM procedures WHERE id = $1 FOR UPDATE',
+      [procedureId],
+    )
     if (!current[0]) return null
     if (!statusesFor(current[0].modality).includes(statusLabel)) {
       throw new ClinicValidationError('Status inválido para a modalidade.')
@@ -520,6 +526,7 @@ export async function recordVisit(
       [dentistId, procedureId, visitedOn, note, statusLabel],
     )
     await tx.query('UPDATE procedures SET status_label = $2 WHERE id = $1', [procedureId, statusLabel])
+    await recordStageChange(tx, dentistId, procedureId, current[0].status_label, statusLabel)
     return readProcedure(tx, procedureId)
   })
 }
