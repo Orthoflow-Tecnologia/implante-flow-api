@@ -10,6 +10,7 @@ import {
   updateLocation,
   updateProfile,
 } from '../practice/locations.js'
+import { lookupCroRegistration } from '../cro/lookup.js'
 import { errorResponseSchema } from '../http/error-handler.js'
 
 function databaseOf(request: FastifyRequest, reply: FastifyReply): Database | undefined {
@@ -96,5 +97,31 @@ export async function registerPracticeRoutes(app: FastifyInstance): Promise<void
       if (!locationIds) return reply.status(403).send(denied(request))
       return { locationIds }
     })
+
+    v1.get(
+      '/dentists/cro-lookup',
+      {
+        schema: {
+          tags: ['perfil'],
+          security: [{ bearerAuth: [] }],
+          querystring: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              uf: { type: 'string' },
+              registration: { type: 'string' },
+            },
+          },
+          response: { 200: { type: 'object', additionalProperties: true } },
+        },
+      },
+      async (request) => {
+        const query = request.query as { uf?: string; registration?: string }
+        return lookupCroRegistration(
+          { uf: query.uf, registration: query.registration },
+          request.server.clock(),
+        )
+      },
+    )
   }, { prefix: '/v1' })
 }
