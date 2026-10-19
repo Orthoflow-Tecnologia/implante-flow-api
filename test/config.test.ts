@@ -18,18 +18,36 @@ test('carrega defaults seguros fora de produção', () => {
   assert.equal(config.openApiEnabled, true)
   assert.deepEqual(config.corsOrigins, [])
   assert.equal(config.serviceName, 'implante-flow-api')
+  assert.equal(config.databaseUrl, null)
   assert.match(config.serviceVersion, /^\d+\.\d+\.\d+/)
 })
 
 test('desliga o OpenAPI em production quando a flag não vem', () => {
-  const config = loadConfig({ APP_ENV: 'production' })
+  const config = loadConfig({ APP_ENV: 'production', DATABASE_URL: 'postgres://db/implante' })
   assert.equal(config.openApiEnabled, false)
   assert.equal(config.logLevel, 'info')
+  assert.equal(config.databaseUrl, 'postgres://db/implante')
 })
 
 test('aceita OpenAPI ligado em production por flag explícita', () => {
-  const config = loadConfig({ ...baseEnv, APP_ENV: 'production', OPENAPI_ENABLED: 'true' })
+  const config = loadConfig({
+    ...baseEnv,
+    APP_ENV: 'production',
+    OPENAPI_ENABLED: 'true',
+    DATABASE_URL: 'postgres://db/implante',
+  })
   assert.equal(config.openApiEnabled, true)
+})
+
+test('exige banco em staging e production sem revelar a URL', () => {
+  assert.throws(() => loadConfig({ APP_ENV: 'staging' }), ConfigError)
+  try {
+    loadConfig({ APP_ENV: 'production' })
+    assert.fail('deveria exigir DATABASE_URL')
+  } catch (error) {
+    assert.ok(error instanceof ConfigError)
+    assert.equal(error.message.includes('postgres'), false)
+  }
 })
 
 test('separa origens CORS e ignora vazios', () => {

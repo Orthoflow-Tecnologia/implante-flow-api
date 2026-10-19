@@ -15,6 +15,7 @@ export type AppConfig = {
   corsOrigins: readonly string[]
   serviceName: 'implante-flow-api'
   serviceVersion: string
+  databaseUrl: string | null
 }
 
 export class ConfigError extends Error {
@@ -78,6 +79,11 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new ConfigError('OPENAPI_ENABLED inválido. Use true ou false.')
   }
 
+  const databaseUrl = read(source, 'DATABASE_URL') ?? null
+  if ((appEnvRaw === 'production' || appEnvRaw === 'staging') && databaseUrl === null) {
+    throw new ConfigError('DATABASE_URL é obrigatório em staging e production.')
+  }
+
   return {
     appEnv: appEnvRaw,
     host: read(source, 'HOST') ?? '0.0.0.0',
@@ -90,5 +96,6 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       .filter((origin) => origin.length > 0),
     serviceName: 'implante-flow-api',
     serviceVersion: readServiceVersion(),
+    databaseUrl,
   }
 }

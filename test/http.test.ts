@@ -12,6 +12,7 @@ const config: AppConfig = {
   corsOrigins: [],
   serviceName: 'implante-flow-api',
   serviceVersion: '0.1.0',
+  databaseUrl: null,
 }
 
 test('probes públicos respondem sem autenticação', async () => {

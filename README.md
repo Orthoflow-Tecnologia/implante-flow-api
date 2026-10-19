@@ -63,5 +63,8 @@ A imagem `Dockerfile` escuta em `0.0.0.0:3000`, roda com usuário sem privilégi
 | `LOG_LEVEL` | `info` (`silent` em `test`) | níveis do Pino |
 | `OPENAPI_ENABLED` | `true` fora de `production` | `true`, `false` |
 | `CORS_ORIGINS` | vazio | origens separadas por vírgula |
+| `DATABASE_URL` | vazio | obrigatório em `staging` e `production` |
+
+O processo aplica as migrations SQL de `migrations/` ao iniciar. `npm run migrate` faz o mesmo passo sem subir o HTTP. Consultas clínicas entram com `SET LOCAL ROLE implante_app` e `app.dentist_id`, sob row level security. O papel da aplicação não contorna essa política. `/ready` consulta o banco quando `DATABASE_URL` existe.
 
 `SIGTERM` e `SIGINT` fecham o servidor antes do processo sair.
