@@ -18,6 +18,7 @@ const config: AppConfig = {
   serviceVersion: '0.1.0',
   databaseUrl: null,
   workOs: null,
+  s3: null,
 }
 
 test('grava paciente, procedimento, consulta e retorno só para o dono', async () => {

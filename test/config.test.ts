@@ -20,6 +20,7 @@ test('carrega defaults seguros fora de produção', () => {
   assert.equal(config.serviceName, 'implante-flow-api')
   assert.equal(config.databaseUrl, null)
   assert.equal(config.workOs, null)
+  assert.equal(config.s3, null)
   assert.match(config.serviceVersion, /^\d+\.\d+\.\d+/)
 })
 

@@ -7,10 +7,12 @@ import type { Authenticate } from './auth/plugin.js'
 import { registerAuth } from './auth/plugin.js'
 import { type AppConfig, loadConfig } from './config.js'
 import type { Database } from './db/database.js'
+import type { ObjectStore } from './files/object-store.js'
 import { registerErrorHandler } from './http/error-handler.js'
 import { requestIdFrom } from './http/request-id.js'
 import { registerCatalogRoutes } from './routes/catalog.js'
 import { registerClinicRoutes } from './routes/clinic.js'
+import { registerPhotoRoutes } from './routes/photos.js'
 import { registerPracticeRoutes } from './routes/practice.js'
 import { registerHealthRoutes, type ReadinessCheck } from './routes/health.js'
 import { registerV1Routes } from './routes/v1.js'
@@ -21,6 +23,7 @@ export type BuildAppOptions = {
   readinessCheck?: ReadinessCheck
   authenticate?: Authenticate
   database?: Database | null
+  objectStore?: ObjectStore | null
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -47,6 +50,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.decorate('config', config)
   app.decorate('database', options.database ?? null)
+  app.decorate('objectStore', options.objectStore ?? null)
 
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id)
@@ -102,6 +106,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await registerClinicRoutes(app)
   await registerCatalogRoutes(app)
   await registerPracticeRoutes(app)
+  await registerPhotoRoutes(app)
 
   return app
 }

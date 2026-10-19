@@ -21,6 +21,7 @@ test('catálogo é somente leitura para o dentista', async () => {
     serviceVersion: '0.1.0',
     databaseUrl: null,
     workOs: null,
+    s3: null,
   }
   const app = await buildApp({ config, database, authenticate: async () => ana })
   const implants = await app.inject({

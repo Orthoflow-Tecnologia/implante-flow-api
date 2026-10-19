@@ -6,6 +6,7 @@ import { buildApp } from './app.js'
 import { ConfigError, loadConfig } from './config.js'
 import { migrate } from './db/migrate.js'
 import { PgDatabase } from './db/pg-database.js'
+import { createS3ObjectStore } from './files/object-store.js'
 
 const config = loadConfig()
 const database = config.databaseUrl ? new PgDatabase(config.databaseUrl) : undefined
@@ -27,6 +28,7 @@ const app = await buildApp({
   readinessCheck: async () => (database ? database.ping() : true),
   ...(authenticate ? { authenticate } : {}),
   ...(database ? { database } : {}),
+  ...(config.s3 ? { objectStore: createS3ObjectStore(config.s3) } : {}),
 })
 
 let shuttingDown = false

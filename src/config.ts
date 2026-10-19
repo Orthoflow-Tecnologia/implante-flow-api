@@ -21,6 +21,7 @@ export type AppConfig = {
     audience: string
     jwksUrl: string
   } | null
+  s3: { bucket: string; region: string } | null
 }
 
 export class ConfigError extends Error {
@@ -104,6 +105,8 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     workOsIssuer && workOsAudience && workOsJwksUrl
       ? { issuer: workOsIssuer, audience: workOsAudience, jwksUrl: workOsJwksUrl }
       : null
+  const s3Bucket = read(source, 'S3_BUCKET')
+  const s3 = s3Bucket ? { bucket: s3Bucket, region: read(source, 'S3_REGION') ?? 'sa-east-1' } : null
 
   return {
     appEnv: appEnvRaw,
@@ -119,5 +122,6 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     serviceVersion: readServiceVersion(),
     databaseUrl,
     workOs,
+    s3,
   }
 }

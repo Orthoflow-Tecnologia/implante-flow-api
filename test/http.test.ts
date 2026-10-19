@@ -16,6 +16,7 @@ const config: AppConfig = {
   serviceVersion: '0.1.0',
   databaseUrl: null,
   workOs: null,
+  s3: null,
 }
 
 const anaId = '11111111-1111-4111-8111-111111111111'

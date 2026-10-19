@@ -17,6 +17,7 @@ const config: AppConfig = {
   serviceVersion: '0.1.0',
   databaseUrl: null,
   workOs: null,
+  s3: null,
 }
 
 test('perfil, locais e filtro de pacientes ficam no dentista dono', async () => {
