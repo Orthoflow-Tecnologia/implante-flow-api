@@ -2,7 +2,54 @@
 
 API clínica do prontuário [Implante Flow](https://github.com/Orthoflow-Resende/Implate-flow). Este repositório é o backend Node.js/Fastify. O aplicativo Flutter e a infraestrutura de deploy ficam em repositórios separados.
 
-## Executar
+## Imagem no GitHub Container Registry
+
+A imagem de produção fica em [ghcr.io/orthoflow-tecnologia/implante-flow-api](https://github.com/Orthoflow-Tecnologia/implante-flow-api/pkgs/container/implante-flow-api), vinculada a este repositório. Tags: `latest` e `0.1.0` (multi-arch `linux/amd64` e `linux/arm64`).
+
+O pacote é **privado**: quem puxa a imagem precisa de acesso ao repositório (ou permissão explícita no pacote) e de um token com escopo `read:packages`.
+
+```bash
+# autenticação (PAT classic com read:packages, ou token do gh)
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin
+
+docker pull ghcr.io/orthoflow-tecnologia/implante-flow-api:latest
+```
+
+Copie as variáveis abaixo para um `.env` (em staging/production `DATABASE_URL` e WorkOS são obrigatórios):
+
+```env
+APP_ENV=production
+HOST=0.0.0.0
+PORT=3000
+LOG_LEVEL=info
+OPENAPI_ENABLED=false
+WORKOS_ISSUER=https://api.workos.com/user_management/<client_id>
+WORKOS_AUDIENCE=<client_id>
+WORKOS_JWKS_URL=https://api.workos.com/sso/jwks/<client_id>
+DATABASE_URL=postgres://user:pass@host:5432/implante_flow
+S3_BUCKET=implante-flow
+S3_REGION=sa-east-1
+S3_ENDPOINT=
+S3_PUBLIC_ENDPOINT=
+S3_ACCESS_KEY_ID=
+S3_SECRET_ACCESS_KEY=
+CORS_ORIGINS=
+```
+
+```bash
+docker run --rm -p 3000:3000 --env-file .env \
+  ghcr.io/orthoflow-tecnologia/implante-flow-api:latest
+```
+
+Em Compose, troque o `build: .` do serviço `api` por:
+
+```yaml
+image: ghcr.io/orthoflow-tecnologia/implante-flow-api:latest
+```
+
+A imagem escuta em `0.0.0.0:3000`, roda sem privilégio e já define healthcheck em `GET /health`. Segredos não entram na imagem: passe tudo por ambiente. Migrations em `migrations/` rodam na subida do processo.
+
+## Executar em desenvolvimento
 
 Requer Node.js 24.
 
@@ -10,7 +57,7 @@ Requer Node.js 24.
 docker compose up -d --build
 ```
 
-`docker compose up -d --build` sobe PostgreSQL, MinIO e a API, para desenvolvimento. WorkOS (`WORKOS_ISSUER`, `WORKOS_AUDIENCE`, `WORKOS_JWKS_URL`) pode ir num `.env` ao lado do compose; o restante da API já vem do `compose.yaml`. Staging e production não usam este arquivo: lá `DATABASE_URL` e `S3_*` vêm do ambiente de execução.
+`docker compose up -d --build` sobe PostgreSQL, MinIO e a API (build local), para desenvolvimento. WorkOS (`WORKOS_ISSUER`, `WORKOS_AUDIENCE`, `WORKOS_JWKS_URL`) pode ir num `.env` ao lado do compose; o restante da API já vem do `compose.yaml`. Staging e production não usam este arquivo: lá `DATABASE_URL` e `S3_*` vêm do ambiente de execução.
 
 Para hot reload no host, use `npm install` e `npm run dev` com Postgres e MinIO do compose; nesse caso não suba o serviço `api` (`docker compose up -d postgres minio minio-setup`).
 
