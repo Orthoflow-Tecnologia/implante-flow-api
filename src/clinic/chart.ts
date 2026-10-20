@@ -102,6 +102,19 @@ async function loadChart(tx: Queryable): Promise<Record<string, unknown>> {
           'SELECT procedure_id, linked_procedure_id FROM procedure_links WHERE procedure_id = ANY($1::uuid[])',
           [procedureIds],
         )
+  const implantLinks =
+    procedureIds.length === 0
+      ? []
+      : await tx.query<{ procedure_id: string; implant_id: string }>(
+          'SELECT procedure_id, implant_id FROM procedure_implant_links WHERE procedure_id = ANY($1::uuid[])',
+          [procedureIds],
+        )
+  const implants = await tx.query<Record<string, unknown>>(
+    `SELECT id, patient_id, fdi, origin, source_procedure_id, manufacturer, model, size, lot,
+            installed_on, origin_clinic, notes, active
+     FROM installed_implants
+     ORDER BY active DESC, fdi, created_at, id`,
+  )
   const notices =
     procedureIds.length === 0
       ? []
@@ -126,6 +139,25 @@ async function loadChart(tx: Queryable): Promise<Record<string, unknown>> {
 
   const locationsOf = (patientId: string) =>
     patientLocations.filter((link) => link.patient_id === patientId).map((link) => link.location_id)
+
+  const implantsOf = (patientId: string) =>
+    implants
+      .filter((implant) => implant['patient_id'] === patientId)
+      .map((implant) => ({
+        id: implant['id'],
+        patientId: implant['patient_id'],
+        fdi: implant['fdi'],
+        origin: implant['origin'],
+        sourceProcedureId: implant['source_procedure_id'],
+        manufacturer: implant['manufacturer'],
+        model: implant['model'],
+        size: implant['size'],
+        lot: implant['lot'],
+        installedOn: implant['installed_on'] ? appDate(implant['installed_on'] as Dated) : null,
+        originClinic: implant['origin_clinic'],
+        notes: implant['notes'],
+        active: implant['active'],
+      }))
 
   return {
     profile: {
@@ -157,11 +189,21 @@ async function loadChart(tx: Queryable): Promise<Record<string, unknown>> {
       birthDate: appDate(patient['birth_date'] as Dated),
       notes: patient['notes'],
       guardian: patient['guardian'],
+      implants: implantsOf(patient['id'] as string),
     })),
     procedures: procedures.map((procedure) => {
       const procedureId = procedure['id'] as string
       const procedureSites = sites.filter((site) => site['procedure_id'] === procedureId)
       const issued = certificates.find((certificate) => certificate.procedure_id === procedureId)
+      const linkedImplantIds = implantLinks
+        .filter((link) => link.procedure_id === procedureId)
+        .map((link) => link.implant_id)
+      const linkedFromImplants = linkedImplantIds
+        .map((implantId) => implants.find((implant) => implant['id'] === implantId)?.['source_procedure_id'])
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      const legacyLinks = links
+        .filter((link) => link.procedure_id === procedureId)
+        .map((link) => link.linked_procedure_id)
       return {
         id: procedureId,
         patientId: procedure['patient_id'],
@@ -171,9 +213,8 @@ async function loadChart(tx: Queryable): Promise<Record<string, unknown>> {
         sinusLift: procedure['sinus_lift'],
         sinusLiftTechnique: procedure['sinus_lift_technique'],
         sinusLiftNote: procedure['sinus_lift_note'],
-        linkedProcedureIds: links
-          .filter((link) => link.procedure_id === procedureId)
-          .map((link) => link.linked_procedure_id),
+        linkedImplantIds,
+        linkedProcedureIds: [...new Set([...legacyLinks, ...linkedFromImplants])],
         arch: procedure['arch'],
         surgeryDate: appDate(procedure['surgery_date'] as Dated),
         statusLabel: procedure['status_label'],

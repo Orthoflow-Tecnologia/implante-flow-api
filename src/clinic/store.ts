@@ -1,6 +1,7 @@
 import type { Queryable } from '../db/database.js'
 import type { Database } from '../db/database.js'
 import { recordStageChange, revokeDisabledChannels } from '../notices/stage-notices.js'
+import { insertImplantLinks, insertProcedureRecordedImplants } from './implants.js'
 import {
   ClinicValidationError,
   assertProcedureShape,
@@ -262,6 +263,7 @@ export type ProcedureInput = {
   sinusLiftTechnique?: unknown
   sinusLiftNote?: unknown
   linkedProcedureIds?: unknown
+  linkedImplantIds?: unknown
   sites?: unknown
   followUps?: unknown
 }
@@ -333,28 +335,33 @@ export async function createProcedure(
     for (const followUp of Array.isArray(input.followUps) ? input.followUps : []) {
       await insertFollowUp(tx, dentistId, procedureId, followUp as Record<string, unknown>)
     }
-    await insertLinks(tx, dentistId, procedureId, input.linkedProcedureIds)
+    if (modality === 'implante') {
+      await insertProcedureRecordedImplants(tx, dentistId, patientId, procedureId, sites, surgeryDate)
+    }
+    if (modality === 'protese') {
+      await insertImplantLinks(
+        tx,
+        dentistId,
+        patientId,
+        procedureId,
+        input.linkedImplantIds,
+        input.linkedProcedureIds,
+      )
+    } else if (Array.isArray(input.linkedProcedureIds) && input.linkedProcedureIds.length > 0) {
+      // Mantém procedure_links legado para modalidades que ainda enviem vínculos antigos.
+      for (const link of input.linkedProcedureIds) {
+        const linkedId = clientUuid(link)
+        if (!linkedId) throw new ClinicValidationError('Procedimento vinculado inválido.')
+        const found = await tx.query('SELECT id FROM procedures WHERE id = $1', [linkedId])
+        if (!found[0]) throw new ClinicValidationError('Procedimento vinculado não encontrado.')
+        await tx.query(
+          `INSERT INTO procedure_links (dentist_id, procedure_id, linked_procedure_id) VALUES ($1, $2, $3)`,
+          [dentistId, procedureId, linkedId],
+        )
+      }
+    }
     return readProcedure(tx, procedureId)
   })
-}
-
-async function insertLinks(
-  tx: Queryable,
-  dentistId: string,
-  procedureId: string,
-  links: unknown,
-): Promise<void> {
-  if (!Array.isArray(links)) return
-  for (const link of links) {
-    const linkedId = clientUuid(link)
-    if (!linkedId) throw new ClinicValidationError('Procedimento vinculado inválido.')
-    const found = await tx.query('SELECT id FROM procedures WHERE id = $1', [linkedId])
-    if (!found[0]) throw new ClinicValidationError('Procedimento vinculado não encontrado.')
-    await tx.query(
-      `INSERT INTO procedure_links (dentist_id, procedure_id, linked_procedure_id) VALUES ($1, $2, $3)`,
-      [dentistId, procedureId, linkedId],
-    )
-  }
 }
 
 async function insertSite(

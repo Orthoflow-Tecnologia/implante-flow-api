@@ -1,6 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Database } from '../db/database.js'
 import { readChart } from '../clinic/chart.js'
+import {
+  createPreexistingImplant,
+  listImplants,
+  updateImplant,
+  type InstalledImplantInput,
+} from '../clinic/implants.js'
 import type { ToothSiteInput } from '../clinic/rules.js'
 import {
   createPatient,
@@ -152,6 +158,64 @@ export async function registerClinicRoutes(app: FastifyInstance): Promise<void> 
         return patient
       })
 
+      v1.get(
+        '/patients/:patientId/implants',
+        {
+          schema: {
+            tags: ['prontuario'],
+            operationId: 'listImplants',
+            security: [{ bearerAuth: [] }],
+            params: {
+              type: 'object',
+              additionalProperties: false,
+              properties: { patientId: { type: 'string', format: 'uuid' } },
+            },
+            response: {
+              200: { type: 'array', items: { type: 'object', additionalProperties: true } },
+              401: errorResponseSchema,
+              403: errorResponseSchema,
+            },
+          },
+        },
+        async (request, reply) => {
+          const database = databaseOf(request, reply)
+          if (!database || !request.dentist) return
+          const implants = await listImplants(
+            database,
+            request.dentist.id,
+            (request.params as { patientId: string }).patientId,
+          )
+          if (!implants) return reply.status(403).send(denied(request))
+          return implants
+        },
+      )
+
+      v1.post('/patients/:patientId/implants', resourceSchema('createImplant'), async (request, reply) => {
+        const database = databaseOf(request, reply)
+        if (!database || !request.dentist) return
+        const implant = await createPreexistingImplant(
+          database,
+          request.dentist.id,
+          (request.params as { patientId: string }).patientId,
+          request.body as InstalledImplantInput,
+        )
+        if (!implant) return reply.status(403).send(denied(request))
+        return reply.status(201).send(implant)
+      })
+
+      v1.patch('/implants/:implantId', resourceSchema('updateImplant'), async (request, reply) => {
+        const database = databaseOf(request, reply)
+        if (!database || !request.dentist) return
+        const implant = await updateImplant(
+          database,
+          request.dentist.id,
+          (request.params as { implantId: string }).implantId,
+          request.body as InstalledImplantInput,
+        )
+        if (!implant) return reply.status(403).send(denied(request))
+        return implant
+      })
+
       v1.post('/patients/:patientId/procedures', resourceSchema('createProcedure'), async (request, reply) => {
         const database = databaseOf(request, reply)
         if (!database || !request.dentist) return
@@ -268,6 +332,7 @@ function resourceSchema(operationId: string) {
           patientId: { type: 'string', format: 'uuid' },
           procedureId: { type: 'string', format: 'uuid' },
           followUpId: { type: 'string', format: 'uuid' },
+          implantId: { type: 'string', format: 'uuid' },
         },
       },
       response: {
