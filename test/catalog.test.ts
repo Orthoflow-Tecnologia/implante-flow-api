@@ -35,14 +35,49 @@ test('catálogo é somente leitura para o dentista', async () => {
     headers: { authorization: 'Bearer ana' },
   })
   assert.equal(implants.statusCode, 200)
-  const catalog = implants.json<{ manufacturers: { name: string; models: { name: string }[] }[] }>()
+  const catalog = implants.json<{
+    manufacturers: {
+      name: string
+      models: { name: string }[]
+      references: { reference: string; model: string; size: string; anvisa: string }[]
+    }[]
+  }>()
   assert.deepEqual(
     catalog.manufacturers.map((manufacturer) => manufacturer.name),
     ['Neodent', 'Nobel Biocare', 'Straumann'],
   )
   assert.ok(catalog.manufacturers[0]?.models.some((model) => model.name === 'Helix GM'))
+  assert.ok(catalog.manufacturers[0]?.references.some((item) => item.reference === '114.224'))
   assert.equal(grafts.statusCode, 200)
   assert.equal(grafts.json<{ manufacturers: { name: string }[] }>().manufacturers.some((item) => item.name === 'Geistlich'), true)
+
+  const found = await app.inject({
+    method: 'GET',
+    url: '/v1/catalog/implants/lookup?manufacturer=Neodent&reference=114.224',
+    headers: { authorization: 'Bearer ana' },
+  })
+  assert.equal(found.statusCode, 200)
+  assert.deepEqual(found.json(), {
+    manufacturer: 'Neodent',
+    model: 'Helix GM',
+    reference: '114.224',
+    size: '4.0 × 10 mm',
+    anvisa: '80156920014',
+  })
+
+  const missing = await app.inject({
+    method: 'GET',
+    url: '/v1/catalog/implants/lookup?manufacturer=Neodent&reference=nao-existe',
+    headers: { authorization: 'Bearer ana' },
+  })
+  assert.equal(missing.statusCode, 404)
+
+  const wrongMaker = await app.inject({
+    method: 'GET',
+    url: '/v1/catalog/implants/lookup?manufacturer=Straumann&reference=114.224',
+    headers: { authorization: 'Bearer ana' },
+  })
+  assert.equal(wrongMaker.statusCode, 404)
 
   await assert.rejects(
     database.withDentist(ana.id, (tx) =>

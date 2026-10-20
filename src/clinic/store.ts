@@ -234,6 +234,7 @@ export async function updatePatient(
 type PieceInput = {
   manufacturer?: unknown
   model?: unknown
+  reference?: unknown
   size?: unknown
   lot?: unknown
   manufacturedOn?: unknown
@@ -382,13 +383,14 @@ async function insertSite(
   if (piece) {
     await tx.query(
       `INSERT INTO implant_pieces (
-         dentist_id, site_id, manufacturer, model, size, lot, manufactured_on, expires_on, anvisa
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+         dentist_id, site_id, manufacturer, model, reference, size, lot, manufactured_on, expires_on, anvisa
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         dentistId,
         siteId,
         text(piece.manufacturer),
         text(piece.model),
+        text(piece.reference),
         text(piece.size),
         text(piece.lot),
         optionalDate(piece.manufacturedOn, 'Fabricação'),

@@ -230,6 +230,7 @@ async function loadChart(tx: Queryable): Promise<Record<string, unknown>> {
               ? {
                   manufacturer: piece['manufacturer'],
                   model: piece['model'],
+                  reference: piece['reference'] ?? '',
                   size: piece['size'],
                   lot: piece['lot'],
                   manufacturedOn: piece['manufactured_on'] ? appDate(piece['manufactured_on'] as Dated) : null,
