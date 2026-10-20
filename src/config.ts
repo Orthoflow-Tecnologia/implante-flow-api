@@ -25,6 +25,7 @@ export type AppConfig = {
     bucket: string
     region: string
     endpoint?: string
+    publicEndpoint?: string
     accessKeyId?: string
     secretAccessKey?: string
   } | null
@@ -122,6 +123,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       : null
   const s3Bucket = read(source, 'S3_BUCKET')
   const s3Endpoint = read(source, 'S3_ENDPOINT')
+  const s3PublicEndpoint = read(source, 'S3_PUBLIC_ENDPOINT')
   const s3AccessKeyId = read(source, 'S3_ACCESS_KEY_ID')
   const s3SecretAccessKey = read(source, 'S3_SECRET_ACCESS_KEY')
   const localS3Count = [s3Endpoint, s3AccessKeyId, s3SecretAccessKey].filter((value) => value !== undefined).length
@@ -134,12 +136,25 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
   if (s3Endpoint !== undefined && !isHttpUrl(s3Endpoint)) {
     throw new ConfigError('S3_ENDPOINT inválido. Use uma URL http ou https.')
   }
+  if (s3PublicEndpoint !== undefined) {
+    if (localS3Count !== 3) {
+      throw new ConfigError('S3_PUBLIC_ENDPOINT exige o endpoint local completo.')
+    }
+    if (!isHttpUrl(s3PublicEndpoint)) {
+      throw new ConfigError('S3_PUBLIC_ENDPOINT inválido. Use uma URL http ou https.')
+    }
+  }
   const s3 = s3Bucket
     ? {
         bucket: s3Bucket,
         region: read(source, 'S3_REGION') ?? 'sa-east-1',
         ...(s3Endpoint && s3AccessKeyId && s3SecretAccessKey
-          ? { endpoint: s3Endpoint, accessKeyId: s3AccessKeyId, secretAccessKey: s3SecretAccessKey }
+          ? {
+              endpoint: s3Endpoint,
+              accessKeyId: s3AccessKeyId,
+              secretAccessKey: s3SecretAccessKey,
+              ...(s3PublicEndpoint ? { publicEndpoint: s3PublicEndpoint } : {}),
+            }
           : {}),
       }
     : null

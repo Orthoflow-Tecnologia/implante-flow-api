@@ -7,12 +7,12 @@ API clínica do prontuário [Implante Flow](https://github.com/Orthoflow-Resende
 Requer Node.js 24.
 
 ```bash
-npm install
-docker compose up -d
-npm run dev
+docker compose up -d --build
 ```
 
-`docker compose up -d` sobe só o PostgreSQL e o MinIO deste repositório, para desenvolvimento. A API continua no host e recebe os dois por `DATABASE_URL` e `S3_*`. Staging e production não usam este compose: os mesmos nomes de variável vêm do ambiente de execução.
+`docker compose up -d --build` sobe PostgreSQL, MinIO e a API, para desenvolvimento. WorkOS (`WORKOS_ISSUER`, `WORKOS_AUDIENCE`, `WORKOS_JWKS_URL`) pode ir num `.env` ao lado do compose; o restante da API já vem do `compose.yaml`. Staging e production não usam este arquivo: lá `DATABASE_URL` e `S3_*` vêm do ambiente de execução.
+
+Para hot reload no host, use `npm install` e `npm run dev` com Postgres e MinIO do compose; nesse caso não suba o serviço `api` (`docker compose up -d postgres minio minio-setup`).
 
 A API escuta em `http://127.0.0.1:3000`.
 
@@ -70,6 +70,7 @@ A imagem `Dockerfile` escuta em `0.0.0.0:3000`, roda com usuário sem privilégi
 | `S3_BUCKET` | vazio | nome do bucket; sem ele, fotos e certificados ficam indisponíveis |
 | `S3_REGION` | `sa-east-1` | região do bucket |
 | `S3_ENDPOINT` | vazio | URL http(s) do S3 local; vazio usa o endpoint da nuvem |
+| `S3_PUBLIC_ENDPOINT` | vazio | URL do S3 vista pelo cliente (URLs assinadas); só com endpoint local |
 | `S3_ACCESS_KEY_ID` | vazio | junto com endpoint e segredo; vazio usa a credencial do ambiente |
 | `S3_SECRET_ACCESS_KEY` | vazio | junto com endpoint e access key |
 
