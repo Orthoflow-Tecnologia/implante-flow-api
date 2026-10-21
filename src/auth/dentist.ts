@@ -4,6 +4,9 @@ import type { AccessToken } from './access-token.js'
 export type AuthenticatedDentist = {
   id: string
   workOsUserId: string
+  email: string
+  role?: string
+  permissions: string[]
 }
 
 export async function dentistForAccessToken(
@@ -17,5 +20,11 @@ export async function dentistForAccessToken(
   ])
   const id = rows[0]?.id
   if (!id) throw new Error('Não foi possível mapear o dentista.')
-  return { id, workOsUserId: access.subject }
+  return {
+    id,
+    workOsUserId: access.subject,
+    email: access.email,
+    ...(access.role ? { role: access.role } : {}),
+    permissions: access.permissions ?? [],
+  }
 }

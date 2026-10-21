@@ -4,6 +4,8 @@ export type AccessToken = {
   subject: string
   email: string
   name: string
+  role?: string
+  permissions: string[]
 }
 
 export class InvalidAccessTokenError extends Error {
@@ -23,6 +25,12 @@ export function bearerToken(authorization: string | undefined): string {
 function claim(payload: Record<string, unknown>, key: string): string {
   const value = payload[key]
   return typeof value === 'string' ? value : ''
+}
+
+function permissionsClaim(payload: Record<string, unknown>): string[] {
+  const value = payload.permissions
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string')
 }
 
 function issuerVariants(issuer: string): string[] {
@@ -54,10 +62,13 @@ export function createAccessTokenVerifier(options: {
       if (!audienceMatches(payload, options.audience)) {
         throw new InvalidAccessTokenError()
       }
+      const role = claim(payload, 'role')
       return {
         subject: payload.sub,
         email: claim(payload, 'email'),
         name: claim(payload, 'name'),
+        ...(role ? { role } : {}),
+        permissions: permissionsClaim(payload),
       }
     } catch (error) {
       if (error instanceof InvalidAccessTokenError) throw error

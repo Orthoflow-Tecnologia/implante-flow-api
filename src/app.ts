@@ -18,6 +18,7 @@ import { registerPhotoRoutes } from './routes/photos.js'
 import { registerReportRoutes } from './routes/reports.js'
 import { registerPracticeRoutes } from './routes/practice.js'
 import { registerHealthRoutes, type ReadinessCheck } from './routes/health.js'
+import { registerAdminRoutes } from './routes/admin.js'
 import { registerV1Routes } from './routes/v1.js'
 import './types.js'
 
@@ -92,6 +93,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           { name: 'operacao', description: 'Contrato de execução e identidade da API.' },
           { name: 'prontuario', description: 'Pacientes, procedimentos, consultas e retornos.' },
           { name: 'catalogo', description: 'Fabricantes e modelos somente leitura.' },
+          {
+            name: 'admin',
+            description: 'Operações administrativas do painel interno (RBAC).',
+          },
         ],
         components: {
           securitySchemes: {
@@ -109,6 +114,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   registerHealthRoutes(app, readinessCheck)
   registerAuth(app, options.authenticate)
   await registerV1Routes(app)
+  await registerAdminRoutes(app)
   await registerClinicRoutes(app)
   await registerCatalogRoutes(app)
   await registerPracticeRoutes(app)
