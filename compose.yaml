@@ -67,6 +67,26 @@ services:
       minio-setup:
         condition: service_completed_successfully
 
+  implant-catalog-sync:
+    image: ghcr.io/orthoflow-tecnologia/implant-catalog-sync
+    environment:
+      APP_ENV: development
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: postgres://implante:implante@postgres:5432/implante_flow
+      LOG_LEVEL: info
+      SYNC_SOURCES: 
+      SYNC_INTERVAL_HOURS_ANVISA: 24
+      SYNC_MAX_DROP_RATIO: 0.2
+      SYNC_LOCK_LEASE_MINUTES: 60
+      HTTP_TIMEOUT_MS: 120000
+      HTTP_MAX_BYTES: 104857600
+      HTTP_ATTEMPTS: 3
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres:
   minio:
