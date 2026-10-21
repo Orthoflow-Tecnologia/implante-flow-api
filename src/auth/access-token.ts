@@ -5,7 +5,7 @@ export type AccessToken = {
   email: string
   name: string
   role?: string
-  permissions: string[]
+  permissions?: string[]
 }
 
 export class InvalidAccessTokenError extends Error {

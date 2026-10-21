@@ -22,7 +22,12 @@ const config: AppConfig = {
 const anaId = '11111111-1111-4111-8111-111111111111'
 const authenticate: Authenticate = async (authorization) => {
   if (authorization !== 'Bearer ana') throw new InvalidAccessTokenError()
-  return { id: anaId, workOsUserId: 'user_ana' }
+  return {
+    id: anaId,
+    workOsUserId: 'user_ana',
+    email: 'ana@example.com',
+    permissions: [],
+  }
 }
 const auth = { config, authenticate }
 
