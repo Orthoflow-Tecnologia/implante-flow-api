@@ -36,11 +36,17 @@ export async function registerCertificateRoutes(app: FastifyInstance, signer?: D
       async (request, reply) => {
         const files = context(request, reply)
         if (!files || !request.dentist) return
+        const raw = request.body
+        const body =
+          raw && typeof raw === 'object' && !Array.isArray(raw)
+            ? (raw as { copies?: number; locationId?: string })
+            : {}
         const issued = await issueCertificate(
           files.database,
           files.store,
           request.dentist.id,
           (request.params as { procedureId: string }).procedureId,
+          body,
           signer,
         )
         if (!issued) {
