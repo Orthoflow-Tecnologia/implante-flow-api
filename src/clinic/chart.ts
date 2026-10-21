@@ -12,7 +12,7 @@ function appDate(value: Dated): string {
 }
 
 function formatCro(cro: string, croUf: string): string {
-  if (cro && croUf) return `${cro}/${croUf}`
+  if (cro && croUf) return `${croUf} ${cro}`
   return cro
 }
 

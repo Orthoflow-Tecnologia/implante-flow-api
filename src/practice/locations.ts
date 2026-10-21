@@ -29,9 +29,16 @@ function toLocation(row: LocationRow): CareLocation {
 
 function splitCro(value: string): { cro: string; croUf: string } {
   const trimmed = value.trim()
-  const match = /^(.+?)\/([A-Za-z]{2})$/.exec(trimmed)
-  if (!match?.[1] || !match[2]) return { cro: trimmed, croUf: '' }
-  return { cro: match[1].trim(), croUf: match[2].toUpperCase() }
+  const spaced = /^([A-Za-z]{2})\s+(\d[\d.\-]*)$/.exec(trimmed)
+  if (spaced?.[1] && spaced[2]) {
+    return { cro: spaced[2].replace(/\D/g, ''), croUf: spaced[1].toUpperCase() }
+  }
+  // Compatível com o formato antigo número/UF.
+  const slash = /^(.+?)\/([A-Za-z]{2})$/.exec(trimmed)
+  if (slash?.[1] && slash[2]) {
+    return { cro: slash[1].replace(/\D/g, '') || slash[1].trim(), croUf: slash[2].toUpperCase() }
+  }
+  return { cro: trimmed, croUf: '' }
 }
 
 function profileFrom(row: Record<string, unknown>): Record<string, unknown> {

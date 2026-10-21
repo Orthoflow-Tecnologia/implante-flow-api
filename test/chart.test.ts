@@ -56,7 +56,7 @@ test('o prontuário devolve o formato do app e preserva os ids do cliente', asyn
     method: 'PATCH',
     url: '/v1/profile',
     headers: { authorization: 'Bearer ana' },
-    payload: { cro: '12345/RJ', reminderDaysBefore: 7 },
+    payload: { cro: 'RJ 12345', reminderDaysBefore: 7 },
   })
   assert.equal(profile.statusCode, 200)
   assert.equal(profile.json<{ cro: string; croUf: string }>().cro, '12345')
@@ -118,7 +118,7 @@ test('o prontuário devolve o formato do app e preserva os ids do cliente', asyn
     }[]
   }>()
   assert.equal(body.profile.name, 'Ana Costa')
-  assert.equal(body.profile.cro, '12345/RJ')
+  assert.equal(body.profile.cro, 'RJ 12345')
   assert.equal(body.profile.reminderDaysBefore, 7)
   assert.equal(body.profile.locations[0]?.id, locationId)
   assert.equal(body.patients[0]?.id, patientId)
