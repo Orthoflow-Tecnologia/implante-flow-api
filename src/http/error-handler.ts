@@ -74,6 +74,21 @@ export function registerErrorHandler(app: FastifyInstance): void {
       return reply.status(500).send(body)
     }
 
+    if (error.name === 'ClinicValidationError') {
+      const clinicError = error as FastifyError & { code?: string; validation?: { message: string }[] }
+      const body: ErrorBody = {
+        error: {
+          code: clinicError.code ?? 'validation_error',
+          message: error.message,
+          requestId: request.id,
+          details: (clinicError.validation ?? []).map((issue) => ({
+            message: issue.message ?? error.message,
+          })),
+        },
+      }
+      return reply.status(400).send(body)
+    }
+
     if (error.validation) {
       const body: ErrorBody = {
         error: {

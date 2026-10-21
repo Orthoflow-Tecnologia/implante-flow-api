@@ -37,11 +37,13 @@ export const followUpReasons = [
 
 export class ClinicValidationError extends Error {
   readonly statusCode = 400
+  readonly code: string
   readonly validation: { message: string }[]
 
-  constructor(message: string) {
+  constructor(message: string, code = 'validation_error') {
     super(message)
     this.name = 'ClinicValidationError'
+    this.code = code
     this.validation = [{ message }]
   }
 }
