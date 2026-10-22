@@ -25,6 +25,8 @@ test('URL de foto expira em cinco minutos e fica com o dentista dono', async () 
     databaseUrl: null,
     workOs: null,
     s3: null,
+    monitorServices: [],
+    railway: null,
   }
   const app = await buildApp({
     config,

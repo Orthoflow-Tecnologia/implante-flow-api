@@ -19,6 +19,8 @@ const config: AppConfig = {
   databaseUrl: null,
   workOs: null,
   s3: null,
+  monitorServices: [],
+  railway: null,
 }
 
 test('lembrete vai ao dentista na antecedência e o atraso sai uma vez', async () => {

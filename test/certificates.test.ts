@@ -19,6 +19,8 @@ const config: AppConfig = {
   databaseUrl: null,
   workOs: null,
   s3: null,
+  monitorServices: [],
+  railway: null,
 }
 
 async function seedClinic(app: Awaited<ReturnType<typeof buildApp>>, auth = 'Bearer ana') {

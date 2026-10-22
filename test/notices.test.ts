@@ -23,6 +23,8 @@ test('notifica a etapa uma vez e respeita revogação e falha', async () => {
     databaseUrl: null,
     workOs: null,
     s3: null,
+    monitorServices: [],
+    railway: null,
   }
   const app = await buildApp({ config, database, authenticate: async () => ana })
   const patient = await app.inject({

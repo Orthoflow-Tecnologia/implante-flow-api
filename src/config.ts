@@ -1,4 +1,10 @@
 import { readFileSync } from 'node:fs'
+import {
+  parseMonitorServices,
+  readRailwayRuntime,
+  type MonitorServiceTarget,
+  type RailwayRuntime,
+} from './ops/monitor-services.js'
 
 export const appEnvironments = ['development', 'staging', 'production', 'test'] as const
 export type AppEnvironment = (typeof appEnvironments)[number]
@@ -29,6 +35,10 @@ export type AppConfig = {
     accessKeyId?: string
     secretAccessKey?: string
   } | null
+  /** Probes HTTP de serviços externos (ex.: deploys Railway). */
+  monitorServices: readonly MonitorServiceTarget[]
+  /** Metadados injetados pelo runtime Railway, quando presentes. */
+  railway: RailwayRuntime | null
 }
 
 export class ConfigError extends Error {
@@ -159,6 +169,13 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       }
     : null
 
+  let monitorServices: readonly MonitorServiceTarget[] = []
+  try {
+    monitorServices = parseMonitorServices(read(source, 'MONITOR_SERVICES'))
+  } catch (error) {
+    throw new ConfigError(error instanceof Error ? error.message : 'MONITOR_SERVICES inválido.')
+  }
+
   return {
     appEnv: appEnvRaw,
     host: read(source, 'HOST') ?? '0.0.0.0',
@@ -174,5 +191,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     databaseUrl,
     workOs,
     s3,
+    monitorServices,
+    railway: readRailwayRuntime(source),
   }
 }

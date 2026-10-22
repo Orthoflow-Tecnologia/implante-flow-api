@@ -19,6 +19,8 @@ const config: AppConfig = {
   databaseUrl: null,
   workOs: null,
   s3: null,
+  monitorServices: [],
+  railway: null,
 }
 
 test('inventário preexistente, vínculo opcional da prótese e isolamento', async () => {

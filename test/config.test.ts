@@ -21,7 +21,40 @@ test('carrega defaults seguros fora de produção', () => {
   assert.equal(config.databaseUrl, null)
   assert.equal(config.workOs, null)
   assert.equal(config.s3, null)
+  assert.deepEqual(config.monitorServices, [])
+  assert.equal(config.railway, null)
   assert.match(config.serviceVersion, /^\d+\.\d+\.\d+/)
+})
+
+test('parseia MONITOR_SERVICES e metadados Railway', () => {
+  const config = loadConfig({
+    ...baseEnv,
+    MONITOR_SERVICES:
+      ' railway-api|API Railway|https://implante-flow-api-production.up.railway.app/health , ',
+    RAILWAY_ENVIRONMENT_NAME: 'production',
+    RAILWAY_SERVICE_NAME: 'implante-flow-api',
+    RAILWAY_PUBLIC_DOMAIN: 'implante-flow-api-production.up.railway.app',
+  })
+  assert.deepEqual(config.monitorServices, [
+    {
+      id: 'railway-api',
+      name: 'API Railway',
+      healthUrl: 'https://implante-flow-api-production.up.railway.app/health',
+    },
+  ])
+  assert.deepEqual(config.railway, {
+    environment: 'production',
+    service: 'implante-flow-api',
+    publicDomain: 'implante-flow-api-production.up.railway.app',
+    deploymentId: null,
+  })
+})
+
+test('rejeita MONITOR_SERVICES malformado', () => {
+  assert.throws(
+    () => loadConfig({ ...baseEnv, MONITOR_SERVICES: 'sem-pipe' }),
+    ConfigError,
+  )
 })
 
 const productionAuth = {

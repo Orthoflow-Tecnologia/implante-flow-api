@@ -19,6 +19,8 @@ const config: AppConfig = {
   databaseUrl: null,
   workOs: null,
   s3: null,
+  monitorServices: [],
+  railway: null,
 }
 
 test('consulta de CRO não inventa cadastro e não altera o perfil', async () => {

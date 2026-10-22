@@ -19,6 +19,8 @@ const config: AppConfig = {
   databaseUrl: null,
   workOs: null,
   s3: null,
+  monitorServices: [],
+  railway: null,
 }
 
 const patientId = '11111111-1111-4111-8111-111111111111'

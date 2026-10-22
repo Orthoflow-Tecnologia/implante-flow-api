@@ -18,6 +18,8 @@ const config: AppConfig = {
   databaseUrl: null,
   workOs: null,
   s3: null,
+  monitorServices: [],
+  railway: null,
 }
 
 test('perfil, locais e filtro de pacientes ficam no dentista dono', async () => {

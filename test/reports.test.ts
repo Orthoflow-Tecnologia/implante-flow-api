@@ -18,6 +18,8 @@ const config: AppConfig = {
   databaseUrl: null,
   workOs: null,
   s3: null,
+  monitorServices: [],
+  railway: null,
 }
 
 test('relatório separa em dia, falta e atraso sem misturar dentistas', async () => {

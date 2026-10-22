@@ -67,6 +67,8 @@ test('mapeia o sub ao mesmo dentista e bloqueia o prontuário alheio', async () 
     databaseUrl: null,
     workOs: null,
     s3: null,
+    monitorServices: [],
+    railway: null,
   }
   const anaToken = await sign({ subject: 'user_ana' })
   const app = await buildApp({
