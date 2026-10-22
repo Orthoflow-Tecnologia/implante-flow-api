@@ -7,6 +7,7 @@ import { ConfigError, loadConfig } from './config.js'
 import { migrate } from './db/migrate.js'
 import { PgDatabase } from './db/pg-database.js'
 import { createS3ObjectStore } from './files/object-store.js'
+import { writeSystemLogSafe } from './ops/system-logs.js'
 
 const config = loadConfig()
 const database = config.databaseUrl ? new PgDatabase(config.databaseUrl) : undefined
@@ -55,6 +56,17 @@ process.once('SIGTERM', () => {
 
 try {
   await app.listen({ host: config.host, port: config.port })
+  await writeSystemLogSafe(database, {
+    level: 'info',
+    message: 'API iniciada',
+    source: 'server',
+    context: {
+      appEnv: config.appEnv,
+      host: config.host,
+      port: config.port,
+      serviceVersion: config.serviceVersion,
+    },
+  })
 } catch (error) {
   app.log.error({ err: error }, 'falha ao iniciar a API')
   process.exit(1)

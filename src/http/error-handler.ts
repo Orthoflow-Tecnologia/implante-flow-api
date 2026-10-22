@@ -1,4 +1,5 @@
 import type { FastifyError, FastifyInstance } from 'fastify'
+import { writeSystemLogSafe } from '../ops/system-logs.js'
 
 const clientErrorCodes: Record<number, string> = {
   400: 'bad_request',
@@ -64,6 +65,19 @@ export function registerErrorHandler(app: FastifyInstance): void {
     const statusCode = error.statusCode ?? 500
     if (statusCode >= 500) {
       request.log.error({ err: error }, 'falha ao processar a requisição')
+      void writeSystemLogSafe(request.server.database, {
+        level: 'error',
+        message: 'falha ao processar a requisição',
+        source: 'error-handler',
+        requestId: request.id,
+        context: {
+          statusCode,
+          errorName: error.name,
+          errorMessage: error.message,
+          route: request.routeOptions.url ?? request.url,
+          method: request.method,
+        },
+      })
       const body: ErrorBody = {
         error: {
           code: 'internal_error',

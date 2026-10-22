@@ -1,3 +1,4 @@
+import { Writable } from 'node:stream'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
 import swagger from '@fastify/swagger'
@@ -11,6 +12,7 @@ import type { DocumentSigner } from './certificates/issue.js'
 import type { ObjectStore } from './files/object-store.js'
 import { registerErrorHandler } from './http/error-handler.js'
 import { requestIdFrom } from './http/request-id.js'
+import { createDbLogTransport } from './ops/db-log-transport.js'
 import { registerCertificateRoutes } from './routes/certificates.js'
 import { registerCatalogRoutes } from './routes/catalog.js'
 import { registerClinicRoutes } from './routes/clinic.js'
@@ -32,18 +34,42 @@ export type BuildAppOptions = {
   clock?: () => Date
 }
 
+function createStdoutAndDbLogStream(database: Database): Writable {
+  const dbTransport = createDbLogTransport(database)
+  return new Writable({
+    write(chunk, encoding, callback) {
+      process.stdout.write(chunk)
+      if (!dbTransport.write(chunk, encoding)) {
+        dbTransport.once('drain', callback)
+        return
+      }
+      callback()
+    },
+  })
+}
+
+function buildLoggerOptions(config: AppConfig, database: Database | null) {
+  const redact = {
+    paths: ['req.headers.authorization', 'req.headers.cookie'],
+    censor: '[redacted]',
+  }
+  if (!database || config.logLevel === 'silent') {
+    return { level: config.logLevel, redact }
+  }
+  return {
+    level: config.logLevel,
+    redact,
+    stream: createStdoutAndDbLogStream(database),
+  }
+}
+
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const config = options.config ?? loadConfig()
   const readinessCheck = options.readinessCheck ?? (async () => true)
+  const database = options.database ?? null
 
   const app = Fastify({
-    logger: {
-      level: config.logLevel,
-      redact: {
-        paths: ['req.headers.authorization', 'req.headers.cookie'],
-        censor: '[redacted]',
-      },
-    },
+    logger: buildLoggerOptions(config, database),
     genReqId: (request) => requestIdFrom(request.headers),
     logController: new LogController({ requestIdLogLabel: 'requestId' }),
     ajv: {
@@ -55,7 +81,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   })
 
   app.decorate('config', config)
-  app.decorate('database', options.database ?? null)
+  app.decorate('database', database)
   app.decorate('objectStore', options.objectStore ?? null)
   app.decorate('clock', options.clock ?? (() => new Date()))
 

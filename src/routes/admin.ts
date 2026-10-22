@@ -1,6 +1,24 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { forbidUnlessAdmin } from '../auth/plugin.js'
 import { errorResponseSchema } from '../http/error-handler.js'
+import { listAuditEvents, recordAuditEventSafe } from '../ops/audit-events.js'
+import { countClinicalAndCatalog } from '../ops/admin-catalog.js'
+import { probeMonitorServices } from '../ops/monitor-services.js'
+import {
+  emptySystemLogsResult,
+  listSystemLogs,
+  type SystemLogLevel,
+} from '../ops/system-logs.js'
+import { registerAdminCatalogRoutes } from './admin-catalog.js'
+
+const systemLogLevels = new Set<SystemLogLevel>([
+  'trace',
+  'debug',
+  'info',
+  'warn',
+  'error',
+  'fatal',
+])
 
 function parsePositiveInt(value: unknown, fallback: number, max = 100): number {
   const parsed = typeof value === 'string' ? Number.parseInt(value, 10) : fallback
@@ -23,6 +41,36 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         if (!forbidUnlessAdmin(request, reply)) return
       })
 
+      admin.addHook('onResponse', async (request, reply) => {
+        const dentist = request.dentist
+        if (!dentist) return
+        const route = request.routeOptions.url ?? request.url.split('?')[0] ?? request.url
+        if (reply.statusCode === 403) {
+          await recordAuditEventSafe(admin.database, {
+            actorEmail: dentist.email,
+            actorDentistId: dentist.id,
+            action: 'admin.access.denied',
+            target: `${request.method} ${route}`,
+            result: 'denied',
+            requestId: request.id,
+          })
+          return
+        }
+        if (reply.statusCode < 200 || reply.statusCode >= 300) return
+        if (request.method !== 'GET') {
+          await recordAuditEventSafe(admin.database, {
+            actorEmail: dentist.email,
+            actorDentistId: dentist.id,
+            action: `admin.${request.method.toLowerCase()}`,
+            target: route,
+            result: 'success',
+            requestId: request.id,
+          })
+        }
+      })
+
+      await registerAdminCatalogRoutes(admin)
+
       admin.get(
         '/dashboard/overview',
         {
@@ -37,6 +85,14 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
                 additionalProperties: false,
                 required: [
                   'activeUsers',
+                  'patients',
+                  'procedures',
+                  'installedImplants',
+                  'implantPieces',
+                  'manufacturers',
+                  'models',
+                  'sizes',
+                  'references',
                   'syncJobs',
                   'recentFailures',
                   'integrationsOnline',
@@ -45,6 +101,14 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
                 ],
                 properties: {
                   activeUsers: { type: 'integer' },
+                  patients: { type: 'integer' },
+                  procedures: { type: 'integer' },
+                  installedImplants: { type: 'integer' },
+                  implantPieces: { type: 'integer' },
+                  manufacturers: { type: 'integer' },
+                  models: { type: 'integer' },
+                  sizes: { type: 'integer' },
+                  references: { type: 'integer' },
                   syncJobs: { type: 'integer' },
                   recentFailures: { type: 'integer' },
                   integrationsOnline: { type: 'integer' },
@@ -61,18 +125,37 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           if (!requirePermission(request, reply, 'dashboard:read')) return
           const database = admin.database
           let activeUsers = 0
+          let clinical = {
+            patients: 0,
+            procedures: 0,
+            installedImplants: 0,
+            implantPieces: 0,
+            manufacturers: 0,
+            models: 0,
+            sizes: 0,
+            references: 0,
+          }
           if (database) {
             const rows = await database.query<{ count: string }>(
               'SELECT COUNT(*)::text AS count FROM dentists',
             )
             activeUsers = Number.parseInt(rows[0]?.count ?? '0', 10)
+            clinical = await countClinicalAndCatalog(database)
           }
+          const remote = await probeMonitorServices(admin.config.monitorServices)
+          const providers = [
+            Boolean(admin.config.workOs),
+            Boolean(admin.objectStore),
+            ...remote.map((item) => item.status === 'ok'),
+            Boolean(admin.config.railway),
+          ]
           return {
             activeUsers,
+            ...clinical,
             syncJobs: 0,
-            recentFailures: 0,
-            integrationsOnline: database ? 1 : 0,
-            integrationsTotal: 2,
+            recentFailures: remote.filter((item) => item.status === 'down').length,
+            integrationsOnline: providers.filter(Boolean).length,
+            integrationsTotal: providers.length,
             generatedAt: admin.clock().toISOString(),
           }
         },
@@ -111,12 +194,16 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           if (!requirePermission(request, reply, 'dashboard:read')) return
           const checkedAt = admin.clock().toISOString()
           const databaseOk = admin.database ? await admin.database.ping() : false
-          return [
+          const remote = await probeMonitorServices(admin.config.monitorServices)
+          const railway = admin.config.railway
+          const services = [
             {
               id: 'api',
               name: 'API clínica',
               status: 'ok' as const,
-              detail: 'Processo respondendo',
+              detail: railway?.service
+                ? `Processo respondendo (${railway.service})`
+                : 'Processo respondendo',
               checkedAt,
             },
             {
@@ -126,7 +213,29 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
               detail: databaseOk ? 'Ping ok' : 'Sem conexão',
               checkedAt,
             },
+            ...remote.map((item) => ({
+              id: item.id,
+              name: item.name,
+              status: item.status,
+              detail: item.detail,
+              checkedAt,
+            })),
           ]
+          if (railway) {
+            const parts = [
+              railway.environment ? `env ${railway.environment}` : null,
+              railway.service ? `svc ${railway.service}` : null,
+              railway.publicDomain ? railway.publicDomain : null,
+            ].filter((part): part is string => part !== null)
+            services.push({
+              id: 'railway-runtime',
+              name: 'Railway (runtime)',
+              status: 'ok' as const,
+              detail: parts.length > 0 ? parts.join(' · ') : 'Variáveis Railway presentes',
+              checkedAt,
+            })
+          }
+          return services
         },
       )
 
@@ -166,6 +275,9 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
                         'status',
                         'role',
                         'permissions',
+                        'patients',
+                        'procedures',
+                        'pieces',
                         'createdAt',
                       ],
                       properties: {
@@ -177,6 +289,9 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
                         status: { type: 'string', enum: ['active', 'invited', 'inactive'] },
                         role: { type: 'string' },
                         permissions: { type: 'array', items: { type: 'string' } },
+                        patients: { type: 'integer' },
+                        procedures: { type: 'integer' },
+                        pieces: { type: 'integer' },
                         createdAt: { type: 'string', format: 'date-time' },
                       },
                     },
@@ -211,11 +326,12 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           let where = ''
           if (search) {
             params.push(`%${search}%`)
-            where = `WHERE name ILIKE $1 OR email ILIKE $1 OR COALESCE(cro, '') ILIKE $1`
+            where =
+              `WHERE d.name ILIKE $1 OR d.email ILIKE $1 OR COALESCE(d.cro, '') ILIKE $1`
           }
 
           const totalRows = await database.query<{ count: string }>(
-            `SELECT COUNT(*)::text AS count FROM dentists ${where}`,
+            `SELECT COUNT(*)::text AS count FROM dentists d ${where}`,
             params,
           )
           const total = Number.parseInt(totalRows[0]?.count ?? '0', 10)
@@ -229,14 +345,44 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
             cro: string | null
             cro_uf: string | null
             created_at: Date
+            patients: string
+            procedures: string
+            pieces: string
           }>(
-            `SELECT id, name, email, cro, cro_uf, created_at
-             FROM dentists
+            `SELECT d.id, d.name, d.email, d.cro, d.cro_uf, d.created_at,
+                    COALESCE(p.cnt, 0)::text AS patients,
+                    COALESCE(pr.cnt, 0)::text AS procedures,
+                    COALESCE(ip.cnt, 0)::text AS pieces
+             FROM dentists d
+             LEFT JOIN (
+               SELECT dentist_id, COUNT(*)::bigint AS cnt
+               FROM patients
+               GROUP BY dentist_id
+             ) p ON p.dentist_id = d.id
+             LEFT JOIN (
+               SELECT dentist_id, COUNT(*)::bigint AS cnt
+               FROM procedures
+               GROUP BY dentist_id
+             ) pr ON pr.dentist_id = d.id
+             LEFT JOIN (
+               SELECT dentist_id, COUNT(*)::bigint AS cnt
+               FROM implant_pieces
+               GROUP BY dentist_id
+             ) ip ON ip.dentist_id = d.id
              ${where}
-             ORDER BY created_at DESC
+             ORDER BY d.created_at DESC
              LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
             listParams,
           )
+
+          await recordAuditEventSafe(database, {
+            actorEmail: request.dentist?.email ?? 'unknown',
+            actorDentistId: request.dentist?.id ?? null,
+            action: 'admin.users.list',
+            target: search ? `q=${search}` : null,
+            result: 'success',
+            requestId: request.id,
+          })
 
           return {
             items: rows.map((row) => ({
@@ -248,6 +394,9 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
               status: 'active' as const,
               role: 'member',
               permissions: [] as string[],
+              patients: Number.parseInt(row.patients, 10),
+              procedures: Number.parseInt(row.procedures, 10),
+              pieces: Number.parseInt(row.pieces, 10),
               createdAt: row.created_at.toISOString(),
             })),
             page,
@@ -293,7 +442,9 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         async (request, reply) => {
           if (!requirePermission(request, reply, 'integrations:manage')) return
           const storageOk = Boolean(admin.objectStore)
-          return [
+          const remote = await probeMonitorServices(admin.config.monitorServices)
+          const checkedAt = admin.clock().toISOString()
+          const items = [
             {
               id: 'workos',
               name: 'WorkOS AuthKit',
@@ -310,7 +461,33 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
               lastRunAt: null,
               lastError: null,
             },
+            ...remote.map((item) => ({
+              id: item.id,
+              name: item.name,
+              kind: 'other' as const,
+              status:
+                item.status === 'ok'
+                  ? ('ok' as const)
+                  : item.status === 'unknown'
+                    ? ('unknown' as const)
+                    : ('error' as const),
+              lastRunAt: checkedAt,
+              lastError: item.status === 'ok' ? null : item.detail,
+            })),
           ]
+          if (admin.config.railway) {
+            const railway = admin.config.railway
+            const label = [railway.service, railway.environment].filter(Boolean).join(' / ')
+            items.push({
+              id: 'railway-runtime',
+              name: label ? `Railway (${label})` : 'Railway',
+              kind: 'other' as const,
+              status: 'ok' as const,
+              lastRunAt: checkedAt,
+              lastError: null,
+            })
+          }
+          return items
         },
       )
 
@@ -455,10 +632,119 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         },
         async (request, reply) => {
           if (!requirePermission(request, reply, 'audit:read')) return
-          const query = request.query as { page?: string; pageSize?: string }
+          const query = request.query as { page?: string; pageSize?: string; action?: string }
           const page = parsePositiveInt(query.page, 1)
           const pageSize = parsePositiveInt(query.pageSize, 20, 100)
-          return { items: [], page, pageSize, total: 0 }
+          const database = admin.database
+          if (!database) {
+            return { items: [], page, pageSize, total: 0 }
+          }
+          return listAuditEvents(database, {
+            page,
+            pageSize,
+            ...(query.action ? { action: query.action } : {}),
+          })
+        },
+      )
+
+      admin.get(
+        '/logs',
+        {
+          schema: {
+            tags: ['admin'],
+            operationId: 'listAdminSystemLogs',
+            summary: 'Logs operacionais persistidos (warn+ e erros)',
+            security: [{ bearerAuth: [] }],
+            querystring: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                page: { type: 'string' },
+                pageSize: { type: 'string' },
+                level: { type: 'string' },
+                q: { type: 'string' },
+              },
+            },
+            response: {
+              200: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['items', 'page', 'pageSize', 'total', 'summary'],
+                properties: {
+                  items: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      additionalProperties: false,
+                      required: ['id', 'level', 'message', 'source', 'createdAt'],
+                      properties: {
+                        id: { type: 'string' },
+                        level: {
+                          type: 'string',
+                          enum: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],
+                        },
+                        message: { type: 'string' },
+                        source: { type: 'string' },
+                        requestId: { type: ['string', 'null'] },
+                        context: { type: 'object', additionalProperties: true },
+                        createdAt: { type: 'string', format: 'date-time' },
+                      },
+                    },
+                  },
+                  page: { type: 'integer' },
+                  pageSize: { type: 'integer' },
+                  total: { type: 'integer' },
+                  summary: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: [
+                      'windowHours',
+                      'total',
+                      'errors',
+                      'warnings',
+                      'info',
+                      'lastAt',
+                    ],
+                    properties: {
+                      windowHours: { type: 'integer' },
+                      total: { type: 'integer' },
+                      errors: { type: 'integer' },
+                      warnings: { type: 'integer' },
+                      info: { type: 'integer' },
+                      lastAt: { type: ['string', 'null'], format: 'date-time' },
+                    },
+                  },
+                },
+              },
+              401: errorResponseSchema,
+              403: errorResponseSchema,
+            },
+          },
+        },
+        async (request, reply) => {
+          if (!requirePermission(request, reply, 'audit:read')) return
+          const query = request.query as {
+            page?: string
+            pageSize?: string
+            level?: string
+            q?: string
+          }
+          const page = parsePositiveInt(query.page, 1)
+          const pageSize = parsePositiveInt(query.pageSize, 50, 100)
+          const database = admin.database
+          if (!database) {
+            return emptySystemLogsResult(page, pageSize)
+          }
+          const level =
+            query.level && systemLogLevels.has(query.level as SystemLogLevel)
+              ? (query.level as SystemLogLevel)
+              : undefined
+          return listSystemLogs(database, {
+            page,
+            pageSize,
+            ...(level ? { level } : {}),
+            ...(query.q ? { q: query.q } : {}),
+          })
         },
       )
     },
